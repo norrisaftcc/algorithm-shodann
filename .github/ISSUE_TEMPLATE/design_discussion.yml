@@ -1,0 +1,115 @@
+name: Design Discussion
+description: Discuss architecture, design decisions, or technical approaches
+title: "[DESIGN] "
+labels: ["type: design", "status: needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Design Discussion
+        Use this template for architectural decisions, design proposals, or technical approach discussions.
+
+  - type: dropdown
+    id: topic-area
+    attributes:
+      label: Topic Area
+      description: What area does this design discussion cover?
+      options:
+        - System Architecture
+        - Data Models & State Management
+        - Workflow Design
+        - Persona/Voice System
+        - Educational Approach
+        - Integration Strategy
+        - Security Design
+        - Performance/Scalability
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-approach
+    attributes:
+      label: Current Approach (if applicable)
+      description: What is the current design or approach?
+      placeholder: Describe existing design, or write "N/A" if this is new
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-alternatives
+    attributes:
+      label: Proposed Alternatives
+      description: What design options are being considered?
+      placeholder: |
+        ## Option A: [Name]
+        Description...
+
+        ## Option B: [Name]
+        Description...
+    validations:
+      required: true
+
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Trade-offs to Discuss
+      description: What are the pros/cons of each approach?
+      placeholder: |
+        **Option A:**
+        - Pros: ...
+        - Cons: ...
+
+        **Option B:**
+        - Pros: ...
+        - Cons: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints & Requirements
+      description: What constraints or requirements must the design meet?
+      placeholder: |
+        - Educational clarity for students
+        - Performance requirements
+        - GitHub platform limitations
+        - Pedagogical goals
+    validations:
+      required: false
+
+  - type: textarea
+    id: related-documents
+    attributes:
+      label: Related Documents
+      description: Link to design docs, RFCs, or relevant issues
+      placeholder: |
+        - design_docs/SHODANN_CLAUDE.md
+        - #123 (related issue)
+    validations:
+      required: false
+
+  - type: dropdown
+    id: decision-urgency
+    attributes:
+      label: Decision Urgency
+      description: When does this decision need to be made?
+      options:
+        - Blocking - needed immediately
+        - High - needed for current sprint
+        - Medium - needed within 2-3 weeks
+        - Low - future planning
+    validations:
+      required: true
+
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open Questions
+      description: What questions need to be answered?
+      placeholder: |
+        - Question 1?
+        - Question 2?
+    validations:
+      required: false

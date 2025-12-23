@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: SHODANN Design Documentation
+    url: https://github.com/norrisaftcc/algorithm-shodann/tree/main/design_docs
+    about: Review existing design documents and architecture plans
+  - name: AlgoCratic Futures Framework
+    url: https://github.com/norrisaftcc/algorithm-shodann
+    about: Parent educational framework context

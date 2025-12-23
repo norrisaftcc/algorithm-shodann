@@ -1,0 +1,98 @@
+name: Feature Request
+description: Propose new functionality or capability for SHODANN
+title: "[FEATURE] "
+labels: ["type: feature", "status: needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Feature Request
+        Thank you for contributing to SHODANN development! Please provide details about the proposed feature.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component Affected
+      description: Which part of SHODANN does this feature relate to?
+      options:
+        - Core Workflow (GitHub Actions)
+        - Velocity Calculation Engine
+        - RAGE STATE (Security Mode)
+        - Persona/Voice System
+        - State Management
+        - Templates
+        - Documentation
+        - Other/Multiple
+    validations:
+      required: true
+
+  - type: dropdown
+    id: clearance
+    attributes:
+      label: Clearance Level Consideration
+      description: Which student clearance levels does this feature impact?
+      multiple: true
+      options:
+        - INFRARED (Complete beginner)
+        - RED (Junior)
+        - ORANGE (Mid-level)
+        - YELLOW (Senior)
+        - GREEN (Lead)
+        - BLUE+ (Strategic)
+        - All levels
+        - Not student-facing
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description
+      description: What functionality should be added?
+      placeholder: Describe the feature in detail
+    validations:
+      required: true
+
+  - type: textarea
+    id: educational-value
+    attributes:
+      label: Educational Value & Rationale
+      description: How does this feature support SHODANN's pedagogical mission?
+      placeholder: |
+        - What learning outcome does this support?
+        - How does it measure or encourage growth velocity?
+        - Does it maintain the persona/voice consistency?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: How will we know this feature is complete and working?
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Criterion 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: related-docs
+    attributes:
+      label: Related Design Documents
+      description: Link to any relevant design docs or references
+      placeholder: |
+        - design_docs/SHODANN_CLAUDE.md
+        - design_docs/shodann-core.yml
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information, mockups, or examples
+      placeholder: Add screenshots, code examples, or links
+    validations:
+      required: false

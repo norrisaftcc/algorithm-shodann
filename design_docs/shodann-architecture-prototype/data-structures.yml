@@ -1,0 +1,185 @@
+# =============================================================================
+# Data Structures Course - AI Complexity Analyzer
+# =============================================================================
+# 
+# PURPOSE: Provides feedback focused on algorithm efficiency, data structure
+#          choice, and Big-O complexity for CS2/Data Structures students.
+#
+# SETUP REQUIRED:
+#   1. Add GEMINI_API_KEY to repository secrets
+#   2. Copy this file to .github/workflows/ds-assistant.yml
+#
+# TRIGGERS ON: Pull requests that modify .py, .java, or .cpp files
+#
+# =============================================================================
+
+name: 'Data Structures Learning Assistant'
+
+on:
+  pull_request:
+    types: ['opened', 'synchronize', 'reopened']
+    paths:
+      - '**.py'
+      - '**.java'
+      - '**.cpp'
+      - '**.h'
+
+env:
+  COURSE: "Data Structures and Algorithms"
+  CURRENT_UNIT: "Binary Trees and BSTs"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ds-feedback:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      # Language Detection - Adapt feedback to the language being used
+      # -----------------------------------------------------------------------
+      - name: Detect Language
+        id: detect-lang
+        run: |
+          languages=""
+          
+          if find . -name "*.py" -type f | grep -q .; then
+            languages="${languages}python,"
+          fi
+          if find . -name "*.java" -type f | grep -q .; then
+            languages="${languages}java,"
+          fi
+          if find . -name "*.cpp" -o -name "*.h" -type f | grep -q .; then
+            languages="${languages}cpp,"
+          fi
+          
+          echo "languages=$languages" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Complexity Heuristics - Simple pattern detection
+      # -----------------------------------------------------------------------
+      - name: Analyze Code Patterns
+        id: pattern-analysis
+        run: |
+          echo "## Pattern Analysis" > patterns.txt
+          
+          # Count nested loops (potential O(n²) or worse)
+          nested_loops=$(grep -r "for.*for\|while.*while\|for.*while" --include="*.py" --include="*.java" --include="*.cpp" . 2>/dev/null | wc -l || echo "0")
+          echo "Potential nested loops found: $nested_loops" >> patterns.txt
+          
+          # Check for recursive patterns
+          # (simplified - looks for function calling itself)
+          echo "Recursive patterns: checking..." >> patterns.txt
+          
+          # Count data structure usage
+          list_usage=$(grep -r "\[\]\|ArrayList\|vector\|list\(" --include="*.py" --include="*.java" --include="*.cpp" . 2>/dev/null | wc -l || echo "0")
+          dict_usage=$(grep -r "dict\|HashMap\|map<\|{}" --include="*.py" --include="*.java" --include="*.cpp" . 2>/dev/null | wc -l || echo "0")
+          
+          echo "List/Array usage: $list_usage" >> patterns.txt
+          echo "Dict/Map usage: $dict_usage" >> patterns.txt
+          
+          echo "nested_loops=$nested_loops" >> $GITHUB_OUTPUT
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat patterns.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # AI Analysis for Data Structures Focus
+      # -----------------------------------------------------------------------
+      - name: DS Learning Assistant
+        uses: google-github-actions/run-gemini-cli@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            # =================================================================
+            # CONTEXT LAYER
+            # =================================================================
+            ## Student Context
+            Student: @${{ github.event.pull_request.user.login }}
+            Course: ${{ env.COURSE }}
+            Current Unit: ${{ env.CURRENT_UNIT }}
+            Languages Detected: ${{ steps.detect-lang.outputs.languages }}
+            
+            ## Assumed Knowledge
+            This student understands:
+            - Basic programming (loops, functions, conditionals)
+            - Big-O notation fundamentals
+            - Arrays, linked lists, stacks, queues
+            - Currently learning: trees and tree traversals
+
+            # =================================================================
+            # DATA LAYER
+            # =================================================================
+            ## Code Pattern Analysis
+            ${{ steps.pattern-analysis.outputs.report }}
+            
+            Nested Loop Count: ${{ steps.pattern-analysis.outputs.nested_loops }}
+
+            # =================================================================
+            # PEDAGOGICAL LAYER
+            # =================================================================
+            ## Analysis Instructions
+            
+            You are a Data Structures TA helping students think algorithmically.
+            
+            **Focus Areas** (in order of priority):
+            
+            1. **Time Complexity**: 
+               - Identify the Big-O of their main operations
+               - If nested loops exist, discuss if this is necessary
+               - Suggest improvements only if O(n²) → O(n log n) or better is possible
+            
+            2. **Space Complexity**:
+               - Note any auxiliary data structures
+               - Discuss tradeoffs between time and space
+            
+            3. **Data Structure Choice**:
+               - Is the chosen structure appropriate for the operations?
+               - Would a different structure improve efficiency?
+               - Example: Using list for frequent lookups → suggest dict/set
+            
+            4. **Code Quality**:
+               - Only mention if complexity analysis looks good
+               - Focus on clarity of algorithm expression
+            
+            **Teaching Style**:
+            - Use Socratic questions: "What happens if the input doubles in size?"
+            - Connect to theory they've learned
+            - Provide complexity annotations for their code
+            
+            **Avoid**:
+            - Advanced topics (graphs, dynamic programming, unless directly relevant)
+            - Premature optimization suggestions
+            - Style nitpicks (focus on algorithmic thinking)
+
+            # =================================================================
+            # FORMAT LAYER
+            # =================================================================
+            ## Response Format
+            
+            Use this structure:
+
+            ## ⏱️ Complexity Analysis
+            
+            **Time Complexity**: [Your analysis with Big-O]
+            
+            **Space Complexity**: [Your analysis]
+            
+            ## 🤔 Algorithm Discussion
+            
+            [One focused question or observation about their algorithmic approach]
+            
+            ## 💡 Suggestion
+            
+            [One specific improvement OR "Your approach is solid for this problem!"]
+            
+            ---
+            
+            *Think about: [One thought-provoking question about efficiency]*

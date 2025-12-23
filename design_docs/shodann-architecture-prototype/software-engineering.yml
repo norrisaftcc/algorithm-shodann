@@ -1,0 +1,197 @@
+# =============================================================================
+# Software Engineering Team Project - Code Review Assistant
+# =============================================================================
+# 
+# PURPOSE: Provides industry-style code review feedback focusing on
+#          collaboration, documentation, testing, and professional practices.
+#
+# SETUP REQUIRED:
+#   1. Add GEMINI_API_KEY to repository secrets
+#   2. Copy this file to .github/workflows/se-review.yml
+#   3. Configure Slack webhook (optional) for TA notifications
+#
+# TRIGGERS ON: All pull requests
+#
+# =============================================================================
+
+name: 'Software Engineering Review Assistant'
+
+on:
+  pull_request:
+    types: ['opened', 'synchronize', 'reopened']
+
+env:
+  COURSE: "Software Engineering"
+  PROJECT_TYPE: "Team Capstone Project"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  se-review:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      # Git Practice Analysis
+      # -----------------------------------------------------------------------
+      - name: Analyze Git Practices
+        id: git-analysis
+        run: |
+          echo "## Git Practice Analysis" > git_report.txt
+          
+          # Commit message quality
+          echo "### Recent Commit Messages:" >> git_report.txt
+          git log --oneline -5 >> git_report.txt
+          
+          # Check for conventional commit format
+          conventional=$(git log --oneline -10 | grep -E "^[a-f0-9]+ (feat|fix|docs|style|refactor|test|chore):" | wc -l)
+          echo "Conventional commit format: $conventional/10 recent commits" >> git_report.txt
+          
+          # Branch naming
+          branch_name="${{ github.head_ref }}"
+          echo "Branch name: $branch_name" >> git_report.txt
+          
+          # PR size
+          echo "PR Statistics:" >> git_report.txt
+          echo "- Files changed: ${{ github.event.pull_request.changed_files }}" >> git_report.txt
+          echo "- Lines added: ${{ github.event.pull_request.additions }}" >> git_report.txt
+          echo "- Lines removed: ${{ github.event.pull_request.deletions }}" >> git_report.txt
+          
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat git_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Documentation Check
+      # -----------------------------------------------------------------------
+      - name: Check Documentation
+        id: docs-check
+        run: |
+          echo "## Documentation Analysis" > docs_report.txt
+          
+          # README exists and was updated?
+          if [ -f "README.md" ]; then
+            readme_changed=$(git diff --name-only ${{ github.event.pull_request.base.sha }} | grep -c "README.md" || echo "0")
+            echo "✅ README.md exists (updated in this PR: $readme_changed)" >> docs_report.txt
+          else
+            echo "⚠️ No README.md found" >> docs_report.txt
+          fi
+          
+          # Check for inline comments/docstrings
+          py_files=$(find . -name "*.py" -type f -not -path "./.git/*" | wc -l)
+          if [ "$py_files" -gt 0 ]; then
+            docstrings=$(grep -r '"""' --include="*.py" . 2>/dev/null | wc -l || echo "0")
+            echo "Python files: $py_files, Docstring markers: $docstrings" >> docs_report.txt
+          fi
+          
+          # Check for test files
+          test_files=$(find . -name "test_*.py" -o -name "*_test.py" -o -name "*.test.js" | wc -l)
+          echo "Test files found: $test_files" >> docs_report.txt
+          
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat docs_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # AI Code Review with SE Focus
+      # -----------------------------------------------------------------------
+      - name: SE Review Assistant
+        uses: google-github-actions/run-gemini-cli@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            # =================================================================
+            # CONTEXT LAYER
+            # =================================================================
+            ## Project Context
+            Author: @${{ github.event.pull_request.user.login }}
+            Course: ${{ env.COURSE }}
+            Project: ${{ env.PROJECT_TYPE }}
+            PR Title: ${{ github.event.pull_request.title }}
+            PR Description: ${{ github.event.pull_request.body }}
+            
+            ## This is a Team Project
+            - Multiple contributors are expected
+            - Code will be maintained by others
+            - Professional practices matter
+
+            # =================================================================
+            # DATA LAYER
+            # =================================================================
+            ## Git Practices
+            ${{ steps.git-analysis.outputs.report }}
+
+            ## Documentation Status
+            ${{ steps.docs-check.outputs.report }}
+
+            # =================================================================
+            # PEDAGOGICAL LAYER
+            # =================================================================
+            ## Review Focus
+            
+            You are a senior developer conducting a code review.
+            This is preparation for industry work, not just an academic exercise.
+            
+            **Evaluation Areas** (equal weight):
+            
+            1. **Code Organization**:
+               - Clear separation of concerns?
+               - Reasonable file/folder structure?
+               - No god classes or massive functions?
+            
+            2. **Documentation**:
+               - Would a new team member understand this code?
+               - Are complex sections explained?
+               - Is the README helpful?
+            
+            3. **Git Practices**:
+               - Descriptive commit messages?
+               - Reasonable PR size (< 400 lines ideal)?
+               - Good branch naming?
+            
+            4. **Code Quality**:
+               - Evidence of testing mindset?
+               - Error handling present?
+               - No obvious security issues?
+            
+            **Tone**: Professional but supportive. This is practice for real code reviews.
+            
+            **Important**: 
+            - If this looks like rushed, last-minute work, gently note the importance of consistent progress
+            - If PR is very large, suggest breaking into smaller PRs
+            - Acknowledge good practices when you see them
+
+            # =================================================================
+            # FORMAT LAYER
+            # =================================================================
+            ## Response Format
+            
+            Use this structure:
+
+            ## 📋 Code Review Summary
+            
+            **Overall Assessment**: [One sentence summary]
+            
+            ### ✅ Strengths
+            - [Specific strength 1]
+            - [Specific strength 2]
+            
+            ### 🔄 Suggestions for Improvement
+            - [Priority suggestion with reasoning]
+            - [Secondary suggestion if applicable]
+            
+            ### 📝 Documentation Note
+            [Comment on docs/README/comments status]
+            
+            ---
+            
+            **Industry Tip**: [One professional practice relevant to this PR]
+            
+            *This review focuses on collaboration and maintainability - skills that matter in professional development.*

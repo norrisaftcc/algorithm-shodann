@@ -1,0 +1,107 @@
+name: Instructor/Student Feedback
+description: Provide feedback on SHODANN from instructor, student, or TA perspective
+title: "[FEEDBACK] "
+labels: ["question", "status: needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## User Feedback
+        Your feedback helps improve SHODANN's educational effectiveness. Thank you!
+
+  - type: dropdown
+    id: user-type
+    attributes:
+      label: User Type
+      description: What is your role?
+      options:
+        - Instructor
+        - Teaching Assistant (TA)
+        - Student
+        - Course Administrator
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: feedback-category
+    attributes:
+      label: Feedback Category
+      description: What aspect of SHODANN is this feedback about?
+      options:
+        - Persona/Voice (tone, messaging)
+        - Feedback Quality (helpfulness, accuracy)
+        - Educational Value (learning outcomes)
+        - Usability (ease of understanding)
+        - Technical Issues (bugs, errors)
+        - Documentation (clarity, completeness)
+        - Feature Request
+        - General Observation
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feedback Description
+      description: What would you like to share?
+      placeholder: Describe your experience, observation, or suggestion in detail
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: When/where did you experience this? (Optional - share what you're comfortable with)
+      placeholder: |
+        - Course: (if applicable)
+        - Week/Module: (if applicable)
+        - Clearance Level: (if student)
+        - Specific interaction or workflow run: (if relevant)
+    validations:
+      required: false
+
+  - type: textarea
+    id: suggested-improvement
+    attributes:
+      label: Suggested Improvement
+      description: How could SHODANN be improved in this area?
+      placeholder: What changes would address this feedback?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact on Learning Experience
+      description: How does this affect the learning experience?
+      options:
+        - Significantly positive
+        - Somewhat positive
+        - Neutral/Informational
+        - Somewhat negative
+        - Significantly negative
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority-perspective
+    attributes:
+      label: Priority (from your perspective)
+      description: How important is this feedback?
+      options:
+        - Critical - Major impact on learning
+        - High - Important to address
+        - Medium - Would improve experience
+        - Low - Minor suggestion
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Anything else you'd like to add?
+    validations:
+      required: false

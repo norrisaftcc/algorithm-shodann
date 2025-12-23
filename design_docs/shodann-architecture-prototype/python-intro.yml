@@ -1,0 +1,199 @@
+# =============================================================================
+# Python Intro Course - AI Learning Assistant
+# =============================================================================
+# 
+# PURPOSE: Provides encouraging, educational feedback for students learning
+#          Python fundamentals (variables, loops, conditionals, functions).
+#
+# SETUP REQUIRED:
+#   1. Add GEMINI_API_KEY to repository secrets
+#   2. Copy this file to .github/workflows/python-assistant.yml
+#   3. Customize the COURSE and WEEK environment variables
+#
+# TRIGGERS ON: Pull requests that modify .py files
+#
+# =============================================================================
+
+name: 'Python Learning Assistant'
+
+# -----------------------------------------------------------------------------
+# TRIGGER CONFIGURATION
+# Only runs when Python files change - prevents noise from README updates, etc.
+# -----------------------------------------------------------------------------
+on:
+  pull_request:
+    types: ['opened', 'synchronize', 'reopened']
+    paths:
+      - '**.py'
+
+# -----------------------------------------------------------------------------
+# ENVIRONMENT VARIABLES
+# Customize these for your course!
+# -----------------------------------------------------------------------------
+env:
+  COURSE: "Introduction to Python Programming"
+  WEEK: "3"  # Update this as the semester progresses
+  CURRENT_TOPICS: "loops, conditionals, basic functions"
+  AVOID_TOPICS: "list comprehensions, decorators, generators, classes"
+
+# -----------------------------------------------------------------------------
+# PERMISSIONS
+# Minimal permissions needed for PR comments
+# -----------------------------------------------------------------------------
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  python-feedback:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # -----------------------------------------------------------------------
+      # STEP 1: Get the student's code
+      # -----------------------------------------------------------------------
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for diff analysis
+
+      # -----------------------------------------------------------------------
+      # STEP 2: Set up Python environment
+      # -----------------------------------------------------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # -----------------------------------------------------------------------
+      # STEP 3: PRE-PROCESSING - Run real analysis tools
+      # These provide CONCRETE DATA for the AI to work with
+      # -----------------------------------------------------------------------
+      
+      # Check for syntax errors (compilation)
+      - name: Check Python Syntax
+        id: syntax-check
+        run: |
+          echo "## Syntax Check Results" > syntax_report.txt
+          errors_found=0
+          
+          for file in $(find . -name "*.py" -type f -not -path "./.git/*"); do
+            if ! python -m py_compile "$file" 2>/dev/null; then
+              echo "❌ Syntax error in: $file" >> syntax_report.txt
+              python -m py_compile "$file" 2>&1 | head -5 >> syntax_report.txt
+              errors_found=$((errors_found + 1))
+            else
+              echo "✅ $file - OK" >> syntax_report.txt
+            fi
+          done
+          
+          echo "errors_found=$errors_found" >> $GITHUB_OUTPUT
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat syntax_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # Check code style with flake8 (beginner-friendly rules)
+      - name: Check Code Style
+        id: style-check
+        run: |
+          pip install flake8 --quiet
+          
+          echo "## Style Check Results" > style_report.txt
+          
+          # Only check for beginner-relevant issues:
+          # E1: Indentation
+          # E3: Blank lines
+          # E7: Statement issues
+          # W2: Whitespace warnings
+          flake8 . --select=E1,E3,E7,W2 --max-line-length=100 \
+            --exclude=.git,__pycache__,.venv \
+            --format='%(path)s:%(row)d - %(text)s' > style_report.txt 2>&1 || true
+          
+          issue_count=$(wc -l < style_report.txt)
+          echo "issue_count=$issue_count" >> $GITHUB_OUTPUT
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat style_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # STEP 4: AI INTEGRATION - Send to Gemini with educational prompt
+      # -----------------------------------------------------------------------
+      - name: Python Learning Assistant
+        uses: google-github-actions/run-gemini-cli@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            # =================================================================
+            # CONTEXT LAYER - Who is this student?
+            # =================================================================
+            ## Student Context
+            Student: @${{ github.event.pull_request.user.login }}
+            Course: ${{ env.COURSE }}
+            Week: ${{ env.WEEK }} (focusing on ${{ env.CURRENT_TOPICS }})
+            Files Changed: ${{ github.event.pull_request.changed_files }}
+            PR Title: ${{ github.event.pull_request.title }}
+
+            # =================================================================
+            # DATA LAYER - What did our tools find?
+            # =================================================================
+            ## Syntax Analysis
+            ${{ steps.syntax-check.outputs.report }}
+            
+            Syntax Errors Found: ${{ steps.syntax-check.outputs.errors_found }}
+
+            ## Style Analysis  
+            ${{ steps.style-check.outputs.report }}
+            
+            Style Issues Found: ${{ steps.style-check.outputs.issue_count }}
+
+            # =================================================================
+            # PEDAGOGICAL LAYER - How should you teach?
+            # =================================================================
+            ## Teaching Instructions
+            
+            You are a friendly, encouraging Python teaching assistant.
+            
+            **Priority**: Learning over perfection. Build confidence.
+            
+            **Tone**: 
+            - Warm and supportive
+            - Use "we" language ("Let's look at...")
+            - Celebrate what's working before suggesting changes
+            - Never use words like "wrong", "bad", or "mistake" - use "opportunity"
+            
+            **Focus**: 
+            - Maximum 2-3 concepts per review
+            - Only topics from Week ${{ env.WEEK }}: ${{ env.CURRENT_TOPICS }}
+            - AVOID mentioning: ${{ env.AVOID_TOPICS }}
+            
+            **Level**: Beginner - explain like they're brand new to programming
+            
+            **If syntax errors exist**:
+            - This is the #1 priority
+            - Explain what the error message means in plain English
+            - Show exactly which line has the issue
+            - Provide a corrected code snippet
+            
+            **If no syntax errors**:
+            - Praise their working code genuinely
+            - Pick ONE concept they could improve
+            - Show a "before/after" example using THEIR code
+
+            # =================================================================
+            # FORMAT LAYER - Structure your response
+            # =================================================================
+            ## Response Format
+            
+            Use this exact structure (keep total under 200 words):
+
+            🎉 **What's Working Well**
+            [1-2 specific things they did right, referencing their actual code]
+
+            📚 **Learning Opportunity**  
+            [ONE concept to improve, with explanation and example]
+
+            🔧 **Try This**
+            [Specific, actionable code change they can make right now]
+
+            ---
+            Keep learning! You're doing great. 🐍

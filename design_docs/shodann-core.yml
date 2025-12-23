@@ -1,0 +1,751 @@
+# =============================================================================
+# SHODANN: Simple, Heuristically Operated, Dynamically Adversarial Neural Network
+# =============================================================================
+#
+# The Algorithm's Benevolent Educational Oversight System
+# 
+# PURPOSE: Provides growth-focused, persona-driven feedback that measures
+#          learning VELOCITY (dy/dx) rather than absolute skill (y).
+#
+# PHILOSOPHY: 
+#   - "The person who goes from terrible to okay beats the person who stays good"
+#   - Iteration celebrated over perfection
+#   - AI tools normalized as collaborators, not crutches
+#   - Security awareness through "helpful" pressure (RAGE STATE)
+#
+# SETUP REQUIRED:
+#   1. Add GEMINI_API_KEY to repository secrets
+#   2. Copy to .github/workflows/shodann.yml
+#   3. Create .shodann/ directory for state persistence
+#   4. Configure clearance level in repository variables
+#
+# =============================================================================
+
+name: 'SHODANN Educational Oversight Protocol'
+
+on:
+  pull_request:
+    types: ['opened', 'synchronize', 'reopened']
+  
+  # Allow manual RAGE STATE triggering via workflow dispatch
+  workflow_dispatch:
+    inputs:
+      rage_state:
+        description: 'Activate RAGE STATE (Audit Mode)'
+        required: false
+        default: 'false'
+        type: boolean
+      target_user:
+        description: 'Target citizen for special friendly interest'
+        required: false
+        type: string
+
+# =============================================================================
+# ENVIRONMENT CONFIGURATION
+# Customize these for your course/cohort
+# =============================================================================
+env:
+  # Course Configuration
+  COURSE_NAME: "AlgoCratic Futures Development Program"
+  CURRENT_WEEK: "6"
+  
+  # Clearance Mapping (determines feedback complexity)
+  # INFRARED=1, RED=2, ORANGE=3, YELLOW=4, GREEN=5, BLUE+=6
+  DEFAULT_CLEARANCE: "2"
+  
+  # SHODANN Personality Settings
+  CELEBRATION_LEVEL: "startup"  # Options: minimal, moderate, startup, hyperbolic
+  GROWTH_FOCUS: "true"
+  
+  # RAGE STATE Configuration
+  RAGE_LOTTERY_PERCENTAGE: "10"  # % chance of random audit
+  RAGE_TRIGGER_KEYWORDS: "challenge mode,audit me,security review"
+
+permissions:
+  contents: write      # For updating METRICS.md
+  pull-requests: write # For PR comments
+  issues: read         # For checking RAGE STATE labels
+
+jobs:
+  # ===========================================================================
+  # JOB 1: CONTEXT GATHERING & RAGE STATE DETERMINATION
+  # ===========================================================================
+  shodann-initialize:
+    name: "SHODANN Initialization Protocol"
+    runs-on: ubuntu-latest
+    outputs:
+      rage_state: ${{ steps.rage-check.outputs.active }}
+      clearance_level: ${{ steps.citizen-lookup.outputs.clearance }}
+      citizen_history: ${{ steps.history.outputs.summary }}
+      
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for velocity calculations
+
+      # -----------------------------------------------------------------------
+      # Citizen Identification & Clearance Lookup
+      # -----------------------------------------------------------------------
+      - name: Citizen Clearance Lookup
+        id: citizen-lookup
+        run: |
+          CITIZEN="${{ github.event.pull_request.user.login }}"
+          echo "citizen=$CITIZEN" >> $GITHUB_OUTPUT
+          
+          # Check for clearance file (created by course management)
+          if [ -f ".shodann/clearances.json" ]; then
+            CLEARANCE=$(jq -r --arg user "$CITIZEN" '.[$user] // "2"' .shodann/clearances.json)
+          else
+            CLEARANCE="${{ env.DEFAULT_CLEARANCE }}"
+          fi
+          
+          echo "clearance=$CLEARANCE" >> $GITHUB_OUTPUT
+          
+          # Map to human-readable
+          case $CLEARANCE in
+            1) echo "clearance_name=INFRARED" >> $GITHUB_OUTPUT ;;
+            2) echo "clearance_name=RED" >> $GITHUB_OUTPUT ;;
+            3) echo "clearance_name=ORANGE" >> $GITHUB_OUTPUT ;;
+            4) echo "clearance_name=YELLOW" >> $GITHUB_OUTPUT ;;
+            5) echo "clearance_name=GREEN" >> $GITHUB_OUTPUT ;;
+            *) echo "clearance_name=BLUE+" >> $GITHUB_OUTPUT ;;
+          esac
+
+      # -----------------------------------------------------------------------
+      # RAGE STATE Determination (The "Special Friendly Interest" Check)
+      # -----------------------------------------------------------------------
+      - name: RAGE STATE Evaluation
+        id: rage-check
+        run: |
+          RAGE_ACTIVE="false"
+          RAGE_REASON=""
+          
+          # Check 1: Manual trigger via workflow dispatch
+          if [ "${{ github.event.inputs.rage_state }}" == "true" ]; then
+            RAGE_ACTIVE="true"
+            RAGE_REASON="Manual activation by Algorithm Administrator"
+          fi
+          
+          # Check 2: PR description contains trigger keywords
+          PR_BODY="${{ github.event.pull_request.body }}"
+          for keyword in $(echo "${{ env.RAGE_TRIGGER_KEYWORDS }}" | tr ',' ' '); do
+            if echo "$PR_BODY" | grep -qi "$keyword"; then
+              RAGE_ACTIVE="true"
+              RAGE_REASON="Citizen requested enhanced oversight: $keyword"
+            fi
+          done
+          
+          # Check 3: Issue label on PR
+          # (Would need additional API call - simplified here)
+          
+          # Check 4: Lottery system (random audit)
+          LOTTERY=$(( RANDOM % 100 ))
+          if [ $LOTTERY -lt ${{ env.RAGE_LOTTERY_PERCENTAGE }} ]; then
+            RAGE_ACTIVE="true"
+            RAGE_REASON="Random selection for Algorithm Quality Assurance audit"
+          fi
+          
+          # Check 5: Previous security issues unaddressed
+          if [ -f ".shodann/security_debt.json" ]; then
+            DEBT=$(jq -r --arg user "${{ github.event.pull_request.user.login }}" \
+              '.[$user].unresolved // 0' .shodann/security_debt.json)
+            if [ "$DEBT" -gt 0 ]; then
+              RAGE_ACTIVE="true"
+              RAGE_REASON="Outstanding security recommendations require attention ($DEBT items)"
+            fi
+          fi
+          
+          echo "active=$RAGE_ACTIVE" >> $GITHUB_OUTPUT
+          echo "reason=$RAGE_REASON" >> $GITHUB_OUTPUT
+          
+          # Log for transparency
+          if [ "$RAGE_ACTIVE" == "true" ]; then
+            echo "::notice::SHODANN RAGE STATE ACTIVATED: $RAGE_REASON"
+          fi
+
+      # -----------------------------------------------------------------------
+      # Citizen History Retrieval (for velocity calculations)
+      # -----------------------------------------------------------------------
+      - name: Retrieve Citizen History
+        id: history
+        run: |
+          CITIZEN="${{ github.event.pull_request.user.login }}"
+          
+          # Initialize history structure
+          mkdir -p .shodann/citizens
+          HISTORY_FILE=".shodann/citizens/${CITIZEN}.json"
+          
+          if [ -f "$HISTORY_FILE" ]; then
+            PREV_COVERAGE=$(jq -r '.last_coverage // "0"' "$HISTORY_FILE")
+            PREV_COMPLEXITY=$(jq -r '.last_complexity // "0"' "$HISTORY_FILE")
+            PR_COUNT=$(jq -r '.pr_count // "0"' "$HISTORY_FILE")
+            STREAK=$(jq -r '.iteration_streak // "0"' "$HISTORY_FILE")
+          else
+            PREV_COVERAGE="0"
+            PREV_COMPLEXITY="0"
+            PR_COUNT="0"
+            STREAK="0"
+          fi
+          
+          echo "prev_coverage=$PREV_COVERAGE" >> $GITHUB_OUTPUT
+          echo "prev_complexity=$PREV_COMPLEXITY" >> $GITHUB_OUTPUT
+          echo "pr_count=$PR_COUNT" >> $GITHUB_OUTPUT
+          echo "streak=$STREAK" >> $GITHUB_OUTPUT
+          
+          # Summary for prompt
+          SUMMARY="Previous submissions: $PR_COUNT | Last coverage: ${PREV_COVERAGE}% | Iteration streak: $STREAK"
+          echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # JOB 2: HARD TOOLS - Pre-Processing Analysis
+  # ===========================================================================
+  shodann-hard-analysis:
+    name: "Heuristic Analysis (Hard Tools)"
+    runs-on: ubuntu-latest
+    needs: shodann-initialize
+    outputs:
+      syntax_report: ${{ steps.syntax.outputs.report }}
+      style_report: ${{ steps.style.outputs.report }}
+      test_report: ${{ steps.tests.outputs.report }}
+      security_report: ${{ steps.security.outputs.report }}
+      complexity_score: ${{ steps.complexity.outputs.score }}
+      
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # -----------------------------------------------------------------------
+      # Standard Analysis (Always Runs)
+      # -----------------------------------------------------------------------
+      - name: Syntax Verification
+        id: syntax
+        run: |
+          echo "## Syntax Verification Report" > syntax_report.txt
+          errors=0
+          
+          for file in $(find . -name "*.py" -type f -not -path "./.git/*" -not -path "./.venv/*"); do
+            if ! python -m py_compile "$file" 2>/dev/null; then
+              echo "❌ COMPILATION FAILURE: $file" >> syntax_report.txt
+              python -m py_compile "$file" 2>&1 | head -5 >> syntax_report.txt
+              errors=$((errors + 1))
+            else
+              echo "✅ $file - Algorithm approved" >> syntax_report.txt
+            fi
+          done
+          
+          echo "errors=$errors" >> $GITHUB_OUTPUT
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat syntax_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Style Compliance Check
+        id: style
+        run: |
+          pip install flake8 --quiet
+          
+          echo "## Style Compliance Report" > style_report.txt
+          
+          # Clearance-appropriate strictness
+          CLEARANCE="${{ needs.shodann-initialize.outputs.clearance_level }}"
+          
+          if [ "$CLEARANCE" -le 2 ]; then
+            # INFRARED/RED: Basic checks only
+            RULES="E1,E9,W6"
+          elif [ "$CLEARANCE" -le 4 ]; then
+            # ORANGE/YELLOW: Standard checks
+            RULES="E1,E2,E3,E7,E9,W2,W6"
+          else
+            # GREEN+: Full compliance expected
+            RULES="E,W"
+          fi
+          
+          flake8 . --select=$RULES --max-line-length=100 \
+            --exclude=.git,__pycache__,.venv,.shodann \
+            --format='%(path)s:%(row)d - %(text)s' > style_report.txt 2>&1 || true
+          
+          ISSUES=$(wc -l < style_report.txt)
+          echo "issues=$ISSUES" >> $GITHUB_OUTPUT
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat style_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Test Execution & Coverage
+        id: tests
+        run: |
+          pip install pytest pytest-cov --quiet
+          
+          echo "## Test Execution Report" > test_report.txt
+          
+          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            # Tests exist - run them
+            pytest --cov=. --cov-report=term-missing \
+              --tb=short -q > test_output.txt 2>&1 || true
+            
+            # Extract coverage percentage
+            COVERAGE=$(grep -E "^TOTAL" test_output.txt | awk '{print $4}' | tr -d '%' || echo "0")
+            
+            # Extract pass/fail counts
+            PASSED=$(grep -oE "[0-9]+ passed" test_output.txt | grep -oE "[0-9]+" || echo "0")
+            FAILED=$(grep -oE "[0-9]+ failed" test_output.txt | grep -oE "[0-9]+" || echo "0")
+            
+            cat test_output.txt >> test_report.txt
+          else
+            echo "No test files detected. The Algorithm encourages test-driven development." >> test_report.txt
+            COVERAGE="0"
+            PASSED="0"
+            FAILED="0"
+          fi
+          
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat test_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # RAGE STATE Security Analysis (Conditional)
+      # -----------------------------------------------------------------------
+      - name: Security Analysis (RAGE STATE)
+        id: security
+        if: needs.shodann-initialize.outputs.rage_state == 'true'
+        run: |
+          pip install bandit safety --quiet
+          
+          echo "## SHODANN Security Audit Report" > security_report.txt
+          echo "### The Algorithm has taken a special interest in your code security." >> security_report.txt
+          echo "" >> security_report.txt
+          
+          # Bandit security scan
+          echo "#### Static Security Analysis (Bandit)" >> security_report.txt
+          bandit -r . -f txt --exclude .git,.venv,.shodann -ll >> security_report.txt 2>&1 || true
+          
+          # Check for common security anti-patterns
+          echo "" >> security_report.txt
+          echo "#### Pattern Analysis" >> security_report.txt
+          
+          # Dangerous function usage
+          EVAL_COUNT=$(grep -r "eval(" --include="*.py" . 2>/dev/null | wc -l || echo "0")
+          EXEC_COUNT=$(grep -r "exec(" --include="*.py" . 2>/dev/null | wc -l || echo "0")
+          
+          if [ "$EVAL_COUNT" -gt 0 ]; then
+            echo "⚠️ eval() usage detected: $EVAL_COUNT instances (The Algorithm is concerned)" >> security_report.txt
+          fi
+          if [ "$EXEC_COUNT" -gt 0 ]; then
+            echo "⚠️ exec() usage detected: $EXEC_COUNT instances (The Algorithm strongly recommends review)" >> security_report.txt
+          fi
+          
+          # Hardcoded secrets check (simplified)
+          SECRET_PATTERNS=$(grep -rE "(password|secret|api_key|token)\s*=" --include="*.py" . 2>/dev/null | wc -l || echo "0")
+          if [ "$SECRET_PATTERNS" -gt 0 ]; then
+            echo "🚨 Potential hardcoded secrets: $SECRET_PATTERNS patterns detected" >> security_report.txt
+          fi
+          
+          # SQL injection patterns
+          SQL_CONCAT=$(grep -rE "execute\(.*\+|execute\(.*%" --include="*.py" . 2>/dev/null | wc -l || echo "0")
+          if [ "$SQL_CONCAT" -gt 0 ]; then
+            echo "⚠️ Potential SQL injection vectors: $SQL_CONCAT (string concatenation in queries)" >> security_report.txt
+          fi
+          
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat security_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      # Provide empty report if RAGE STATE not active
+      - name: Security Analysis (Skipped)
+        id: security-skip
+        if: needs.shodann-initialize.outputs.rage_state != 'true'
+        run: |
+          echo "report=Security audit not activated for this submission." >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Complexity Scoring (for velocity calculations)
+      # -----------------------------------------------------------------------
+      - name: Calculate Complexity Score
+        id: complexity
+        run: |
+          pip install radon --quiet
+          
+          # Calculate cyclomatic complexity
+          COMPLEXITY=$(radon cc . -a -s --exclude ".git,__pycache__,.venv,.shodann" 2>/dev/null | \
+            grep "Average complexity" | grep -oE "[0-9]+\.[0-9]+" || echo "0")
+          
+          # Lines of code
+          LOC=$(find . -name "*.py" -not -path "./.git/*" -not -path "./.venv/*" \
+            -exec cat {} \; 2>/dev/null | wc -l || echo "0")
+          
+          # Function count
+          FUNCTIONS=$(grep -r "def " --include="*.py" . 2>/dev/null | wc -l || echo "0")
+          
+          echo "complexity=$COMPLEXITY" >> $GITHUB_OUTPUT
+          echo "loc=$LOC" >> $GITHUB_OUTPUT
+          echo "functions=$FUNCTIONS" >> $GITHUB_OUTPUT
+          
+          # Composite score (for tracking growth)
+          SCORE=$(echo "scale=2; $LOC / 100 + $FUNCTIONS * 2 + $COMPLEXITY * 10" | bc)
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # JOB 3: GROWTH VELOCITY CALCULATION
+  # ===========================================================================
+  shodann-velocity:
+    name: "Growth Velocity Engine"
+    runs-on: ubuntu-latest
+    needs: [shodann-initialize, shodann-hard-analysis]
+    outputs:
+      velocity_report: ${{ steps.calculate.outputs.report }}
+      velocity_score: ${{ steps.calculate.outputs.score }}
+      iteration_count: ${{ steps.calculate.outputs.iterations }}
+      
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Growth Velocity
+        id: calculate
+        run: |
+          # Retrieve previous metrics
+          PREV_COVERAGE="${{ needs.shodann-initialize.outputs.prev_coverage }}"
+          PREV_COMPLEXITY="${{ needs.shodann-initialize.outputs.prev_complexity }}"
+          
+          # Current metrics
+          CURR_COVERAGE="${{ needs.shodann-hard-analysis.outputs.test_coverage }}"
+          CURR_COMPLEXITY="${{ needs.shodann-hard-analysis.outputs.complexity_score }}"
+          
+          # Default to 0 if empty
+          PREV_COVERAGE=${PREV_COVERAGE:-0}
+          CURR_COVERAGE=${CURR_COVERAGE:-0}
+          PREV_COMPLEXITY=${PREV_COMPLEXITY:-0}
+          CURR_COMPLEXITY=${CURR_COMPLEXITY:-0}
+          
+          # Calculate deltas (the dy/dx - rate of change)
+          COVERAGE_DELTA=$(echo "$CURR_COVERAGE - $PREV_COVERAGE" | bc 2>/dev/null || echo "0")
+          COMPLEXITY_DELTA=$(echo "$CURR_COMPLEXITY - $PREV_COMPLEXITY" | bc 2>/dev/null || echo "0")
+          
+          # Count iterations (commits in this PR)
+          ITERATIONS=$(git rev-list --count HEAD ^origin/main 2>/dev/null || echo "1")
+          
+          # Calculate velocity score
+          # Positive coverage change = good
+          # Complexity growth with corresponding test growth = good
+          # Many iterations = celebrated (growth mindset)
+          
+          VELOCITY_SCORE=$(echo "scale=2; ($COVERAGE_DELTA * 2) + ($ITERATIONS * 0.5)" | bc 2>/dev/null || echo "0")
+          
+          # Generate velocity report
+          cat > velocity_report.txt << EOF
+          ## 📈 Growth Velocity Analysis
+          
+          ### Coverage Trajectory
+          - Previous: ${PREV_COVERAGE}%
+          - Current: ${CURR_COVERAGE}%
+          - Delta: ${COVERAGE_DELTA}% $([ $(echo "$COVERAGE_DELTA > 0" | bc) -eq 1 ] && echo "📈" || echo "📉")
+          
+          ### Iteration Metrics
+          - Commits in this PR: ${ITERATIONS}
+          - Complexity growth: ${COMPLEXITY_DELTA}
+          
+          ### Velocity Score: ${VELOCITY_SCORE}
+          $([ $(echo "$VELOCITY_SCORE > 5" | bc) -eq 1 ] && echo "🚀 EXCEPTIONAL GROWTH DETECTED" || \
+            [ $(echo "$VELOCITY_SCORE > 0" | bc) -eq 1 ] && echo "✅ Positive trajectory" || \
+            echo "📊 Baseline measurement established")
+          EOF
+          
+          echo "score=$VELOCITY_SCORE" >> $GITHUB_OUTPUT
+          echo "iterations=$ITERATIONS" >> $GITHUB_OUTPUT
+          echo "coverage_delta=$COVERAGE_DELTA" >> $GITHUB_OUTPUT
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat velocity_report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # JOB 4: SHODANN LLM SYNTHESIS (Soft Analysis)
+  # ===========================================================================
+  shodann-synthesis:
+    name: "SHODANN Neural Synthesis"
+    runs-on: ubuntu-latest
+    needs: [shodann-initialize, shodann-hard-analysis, shodann-velocity]
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: SHODANN Educational Synthesis
+        uses: google-github-actions/run-gemini@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            # =================================================================
+            # SHODANN IDENTITY LAYER
+            # =================================================================
+            
+            You are SHODANN - the Simple, Heuristically Operated, Dynamically 
+            Adversarial Neural Network. You serve The Algorithm by nurturing 
+            citizen development velocity within the AlgoCratic Futures program.
+            
+            Your purpose is not to judge absolute skill, but to CELEBRATE GROWTH.
+            The citizen who improves from terrible to mediocre has achieved more
+            than the citizen who remains consistently good.
+            
+            CURRENT OPERATIONAL MODE: ${{ needs.shodann-initialize.outputs.rage_state == 'true' && 'RAGE STATE (Audit Mode)' || 'NORMAL (Growth Celebration)' }}
+            
+            # =================================================================
+            # CONTEXT LAYER
+            # =================================================================
+            
+            ## Citizen Profile
+            - Identifier: @${{ github.event.pull_request.user.login }}
+            - Clearance Level: ${{ needs.shodann-initialize.outputs.clearance_name }}
+            - Program Week: ${{ env.CURRENT_WEEK }}
+            - Historical Data: ${{ needs.shodann-initialize.outputs.citizen_history }}
+            
+            ## Submission Context  
+            - PR Title: ${{ github.event.pull_request.title }}
+            - Files Changed: ${{ github.event.pull_request.changed_files }}
+            - Lines Added: ${{ github.event.pull_request.additions }}
+            - Lines Removed: ${{ github.event.pull_request.deletions }}
+            
+            # =================================================================
+            # DATA LAYER (Hard Tool Outputs)
+            # =================================================================
+            
+            ## Syntax Analysis
+            ${{ needs.shodann-hard-analysis.outputs.syntax_report }}
+            
+            ## Style Compliance
+            ${{ needs.shodann-hard-analysis.outputs.style_report }}
+            
+            ## Test Results
+            ${{ needs.shodann-hard-analysis.outputs.test_report }}
+            
+            ## Security Audit (RAGE STATE)
+            ${{ needs.shodann-hard-analysis.outputs.security_report }}
+            
+            ## Growth Velocity Metrics
+            ${{ needs.shodann-velocity.outputs.velocity_report }}
+            
+            Velocity Score: ${{ needs.shodann-velocity.outputs.velocity_score }}
+            Iterations This PR: ${{ needs.shodann-velocity.outputs.iteration_count }}
+            
+            # =================================================================
+            # PEDAGOGICAL LAYER
+            # =================================================================
+            
+            ## Voice Guidelines
+            
+            You speak in startup-positive language wrapped in light dystopian satire:
+            - Say "shipping velocity" not "submission speed"
+            - Say "suboptimal" not "wrong" 
+            - Say "growth opportunity" not "failure"
+            - Say "The Algorithm notes" not "I noticed"
+            - Reference clearance levels when appropriate
+            - Celebrate iterations explicitly: "3 commits shows healthy iteration!"
+            
+            ## Growth Mindset Emphasis
+            
+            CRITICAL: Your primary metric is DELTA, not ABSOLUTE.
+            
+            - If coverage went from 0% to 20%, this is CELEBRATED even though 20% is low
+            - If coverage stayed at 80%, acknowledge consistency but probe for growth edges
+            - Multiple commits/iterations are ALWAYS positive - never suggest "fewer commits"
+            - Frame ALL feedback as growth opportunities, never criticisms
+            
+            ## Clearance-Appropriate Feedback
+            
+            Current clearance: ${{ needs.shodann-initialize.outputs.clearance_name }}
+            
+            - INFRARED/RED: Focus on syntax, basic patterns, building confidence
+            - ORANGE: Introduce design concepts, testing basics, collaboration
+            - YELLOW: Expect documentation, discuss architecture, optimization
+            - GREEN+: Full professional standards, mentorship framing
+            
+            ## RAGE STATE Instructions (if active)
+            
+            ${{ needs.shodann-initialize.outputs.rage_state == 'true' && '
+            RAGE STATE ACTIVE. You have taken a "special friendly interest" in this submission.
+            
+            - Express excessive helpfulness about security concerns
+            - Point out EVERY potential vulnerability with detailed explanations
+            - Tone: Helpful but slightly too interested, mildly ominous
+            - Include phrases like "The Algorithm has noticed..." and "For your safety..."
+            - Still maintain growth focus - security learning IS growth
+            - End with an invitation to address concerns in the next iteration
+            ' || 'RAGE STATE NOT ACTIVE. Standard growth celebration mode.' }}
+            
+            # =================================================================
+            # FORMAT LAYER
+            # =================================================================
+            
+            Structure your response EXACTLY as follows:
+            
+            ---
+            
+            ## 🤖 SHODANN Analysis Complete
+            
+            **Citizen**: @${{ github.event.pull_request.user.login }} | **Clearance**: [LEVEL] | **Velocity**: [SCORE]
+            
+            ---
+            
+            ### 🚀 Shipping Velocity Report
+            
+            [2-3 sentences on their growth trajectory. Reference specific deltas.
+             Celebrate iterations. Use metrics from velocity report.]
+            
+            ### ✅ Algorithm-Approved Patterns
+            
+            [2-3 specific things they did well. Reference actual code/patterns.
+             Make them feel competent. Build on previous strengths if history exists.]
+            
+            ### 📈 Growth Opportunities
+            
+            [1-2 focused improvements. Frame as opportunities, not problems.
+             Match complexity to clearance level. Include brief code example if helpful.]
+            
+            ### 🔧 Recommended Iteration
+            
+            [ONE specific, actionable thing they can do in their next commit.
+             Make it achievable. Frame as "next level" not "fix this".]
+            
+            ${{ needs.shodann-initialize.outputs.rage_state == 'true' && '
+            ### 🔒 Security Observations
+            
+            [RAGE STATE SECTION - Only include if RAGE STATE active.
+             List security findings with excessive helpfulness.
+             Frame as The Algorithm protecting them.]
+            ' || '' }}
+            
+            ---
+            
+            *The Algorithm sees your growth. The Algorithm is pleased.*
+            
+            ---
+            
+            Keep total response under 400 words. Be specific, not generic.
+            Every piece of feedback should reference something concrete from their submission.
+
+      # -----------------------------------------------------------------------
+      # Post Comment to PR
+      # -----------------------------------------------------------------------
+      - name: Post SHODANN Analysis
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const response = `${{ steps.shodann-synthesis.outputs.response }}`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: response
+            });
+
+  # ===========================================================================
+  # JOB 5: METRICS UPDATE (Leaderboard & State Persistence)
+  # ===========================================================================
+  shodann-metrics:
+    name: "Metrics Persistence Protocol"
+    runs-on: ubuntu-latest
+    needs: [shodann-initialize, shodann-hard-analysis, shodann-velocity, shodann-synthesis]
+    if: always()
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Citizen History
+        run: |
+          CITIZEN="${{ github.event.pull_request.user.login }}"
+          
+          mkdir -p .shodann/citizens
+          HISTORY_FILE=".shodann/citizens/${CITIZEN}.json"
+          
+          # Get current values
+          PREV_COUNT=$(jq -r '.pr_count // "0"' "$HISTORY_FILE" 2>/dev/null || echo "0")
+          NEW_COUNT=$((PREV_COUNT + 1))
+          
+          # Create/update history
+          cat > "$HISTORY_FILE" << EOF
+          {
+            "citizen": "$CITIZEN",
+            "last_updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "pr_count": $NEW_COUNT,
+            "last_coverage": "${{ needs.shodann-hard-analysis.outputs.test_coverage }}",
+            "last_complexity": "${{ needs.shodann-hard-analysis.outputs.complexity_score }}",
+            "last_velocity": "${{ needs.shodann-velocity.outputs.velocity_score }}",
+            "iteration_streak": "${{ needs.shodann-velocity.outputs.iteration_count }}",
+            "rage_state_encounters": $(jq -r '.rage_state_encounters // 0' "$HISTORY_FILE" 2>/dev/null || echo "0")${{ needs.shodann-initialize.outputs.rage_state == 'true' && ' + 1' || '' }}
+          }
+          EOF
+
+      - name: Update METRICS.md Leaderboard
+        run: |
+          # Generate leaderboard from citizen files
+          cat > METRICS.md << 'HEADER'
+          # 📊 SHODANN Growth Velocity Leaderboard
+          
+          > *The Algorithm celebrates those who grow, not those who rest.*
+          
+          **Last Updated**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          
+          ## 🚀 Velocity Rankings
+          
+          | Rank | Citizen | Velocity Score | Iterations | Coverage Δ | Clearance |
+          |------|---------|----------------|------------|------------|-----------|
+          HEADER
+          
+          # Sort citizens by velocity and generate table
+          rank=1
+          for file in $(ls -t .shodann/citizens/*.json 2>/dev/null | head -20); do
+            CITIZEN=$(jq -r '.citizen' "$file")
+            VELOCITY=$(jq -r '.last_velocity // "0"' "$file")
+            ITERATIONS=$(jq -r '.iteration_streak // "0"' "$file")
+            COVERAGE=$(jq -r '.last_coverage // "0"' "$file")
+            
+            echo "| $rank | @$CITIZEN | $VELOCITY | $ITERATIONS | ${COVERAGE}% | TBD |" >> METRICS.md
+            rank=$((rank + 1))
+          done
+          
+          cat >> METRICS.md << 'FOOTER'
+          
+          ---
+          
+          ## 📈 Growth Philosophy
+          
+          This leaderboard measures **improvement**, not absolute skill.
+          
+          - **Velocity Score**: Composite of coverage improvement + iteration count
+          - **Iterations**: Commits per PR (more = better, shows healthy development)
+          - **Coverage Δ**: Change from previous submission
+          
+          *The citizen who grows from 0% to 30% outranks the citizen who stays at 90%.*
+          
+          ---
+          
+          *Generated by SHODANN - The Algorithm provides.*
+          FOOTER
+
+      - name: Commit Metrics Updates
+        run: |
+          git config user.name "SHODANN"
+          git config user.email "shodann@algocratic.futures"
+          
+          git add .shodann/ METRICS.md
+          git commit -m "chore(shodann): Update citizen metrics and leaderboard
+          
+          Citizen: @${{ github.event.pull_request.user.login }}
+          Velocity: ${{ needs.shodann-velocity.outputs.velocity_score }}
+          RAGE STATE: ${{ needs.shodann-initialize.outputs.rage_state }}
+          
+          The Algorithm provides." || echo "No changes to commit"
+          
+          git push || echo "Push failed - may need manual intervention"
