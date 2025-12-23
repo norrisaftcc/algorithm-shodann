@@ -357,6 +357,110 @@ generateLeaderboard :: [CitizenHistory] -> Markdown
 
 ---
 
+## 8. Architecture Considerations
+
+### Technical Architecture Overview
+
+SHODANN follows a **5-job workflow architecture** orchestrated by GitHub Actions:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SHODANN WORKFLOW PIPELINE                     │
+├─────────────────────────────────────────────────────────────────┤
+│  Job 1: INITIALIZE    → Citizen lookup, RAGE STATE, history     │
+│  Job 2: HARD ANALYSIS → Syntax, style, tests, coverage          │
+│  Job 3: VELOCITY CALC → Delta computation, growth detection     │
+│  Job 4: LLM SYNTHESIS → 4-layer prompt, Gemini API, formatting  │
+│  Job 5: PERSISTENCE   → Update state, regenerate leaderboard    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Hybrid Analysis Philosophy
+
+SHODANN combines **hard** and **soft** analysis to maximize accuracy:
+
+| Hard Analysis | Soft Analysis |
+|---------------|---------------|
+| Linters, compilers, test runners | LLM interpretation |
+| Produces factual data | Produces pedagogical framing |
+| Cannot hallucinate | Can contextualize and encourage |
+| Binary pass/fail | Nuanced growth-positive messaging |
+
+**Why both?** Hard tools provide ground truth that prevents AI hallucination. Soft analysis transforms facts into educational moments.
+
+### State Management Design
+
+State is stored in repository files (no external database):
+
+```
+.shodann/
+├── citizens/
+│   └── {username}.json    # Per-citizen metrics history
+├── clearances.json        # Citizen → clearance mapping
+├── security_debt.json     # Outstanding security findings
+└── config.json            # System configuration
+```
+
+**Design Rationale**:
+- **JSON format**: Human-readable, git-friendly, easy to parse
+- **Per-citizen files**: Reduces merge conflicts, isolates updates
+- **Repository-based**: Transparent, version-controlled, inspectable
+
+**Scalability Consideration**: At large scale (100+ concurrent submissions), file-based state may require locking or queue mechanisms. For MVP, atomic writes with retry logic are sufficient.
+
+### Phased Implementation Approach
+
+**Phase 1: MVP Core**
+- [ ] Core workflow triggering on PR events
+- [ ] Basic velocity calculation (coverage delta, iteration count)
+- [ ] Single LLM provider (Gemini)
+- [ ] JSON-based state persistence
+
+**Phase 2: Enhanced Features**
+- [ ] RAGE STATE with security scanning
+- [ ] Multi-clearance prompt variations
+- [ ] Leaderboard generation
+- [ ] Security debt tracking
+
+**Phase 3: Scale & Polish**
+- [ ] Multi-language support
+- [ ] Alternative LLM providers
+- [ ] Advanced analytics
+- [ ] Performance optimization
+
+### Technology Stack Decisions
+
+| Component | Choice | Rationale |
+|-----------|--------|-----------|
+| Orchestration | GitHub Actions | Native to platform, free tier, familiar to students |
+| LLM | Gemini API | Cost-effective, education-friendly, GitHub Action available |
+| Analysis Tools | Python ecosystem | flake8, pytest, bandit, radon - mature, well-documented |
+| State Format | JSON | Human-readable, git-mergeable, universal parsing |
+
+**Language Decision (Pending)**: See Issue #9 for Python vs JavaScript discussion. Recommendation leans toward Python for pedagogical clarity.
+
+### Error Handling Strategy
+
+SHODANN prioritizes **graceful degradation**:
+
+1. **LLM Unavailable**: Post fallback comment with tool results only
+2. **State Corruption**: Reset citizen to default, log for instructor
+3. **Test Failures**: Continue analysis, report failures as growth opportunities
+4. **Timeout**: Post partial results with "Analysis incomplete" note
+
+**Principle**: Students should always receive *some* feedback, even if components fail.
+
+### Security Architecture
+
+| Layer | Measure |
+|-------|---------|
+| API Keys | GitHub Secrets (never in code) |
+| Permissions | Minimal scope for workflow |
+| Data | No sensitive PII in state files |
+| FERPA | GitHub usernames only, no grades in state |
+
+---
+
 ## Appendix A: Glossary
 
 | Term | Definition |
