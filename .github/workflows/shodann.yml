@@ -1,0 +1,91 @@
+# =============================================================================
+# SHODANN: Educational Oversight Protocol - rung 1
+# =============================================================================
+#
+# One job, not the five the design describes. Five jobs on separate runners
+# have to push every tool report across a job boundary through $GITHUB_OUTPUT,
+# and any flake8 or pytest output containing a bare `EOF` line breaks the
+# heredoc delimiter. One job sidesteps that until there is a reason not to.
+#
+# SECURITY NOTE, and the reason this file does not resemble the draft in
+# design_docs/shodann-core.yml: no citizen-authored text is ever interpolated
+# into a `run:` block. The PR title and body reach Python as a parsed JSON
+# event payload and leave as a file. `${{ ... }}` interpolation of anything a
+# student can write would execute on a runner holding contents: write,
+# pull-requests: write and the model key.
+#
+# Trigger is `pull_request`, never `pull_request_target`. Topology is
+# org-owned repositories with branch pull requests (PRD section 8), so secrets
+# and a write token are available without the elevated trigger.
+# =============================================================================
+
+name: SHODANN Educational Oversight Protocol
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write        # persist the citizen ledger
+  pull-requests: write   # post the review comment
+
+concurrency:
+  # One review per pull request. A rapid push sequence should not race two
+  # jobs to write the same citizen file.
+  group: shodann-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: The Algorithm observes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the submission
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install SHODANN
+        run: pip install --quiet .
+
+      - name: Compose the review
+        env:
+          # Citizen-controlled text never enters this step as an expression.
+          # Python reads the event payload from disk and parses it as JSON.
+          SHODANN_LLM_BASE_URL: ${{ vars.SHODANN_LLM_BASE_URL }}
+          SHODANN_LLM_MODEL: ${{ vars.SHODANN_LLM_MODEL }}
+          SHODANN_LLM_API_KEY: ${{ secrets.SHODANN_LLM_API_KEY }}
+        run: |
+          python -m shodann.review \
+            --event "$GITHUB_EVENT_PATH" \
+            --out shodann-comment.md \
+            --root .
+
+      - name: Post the review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --body-file shodann-comment.md
+
+      - name: Record the citizen ledger
+        env:
+          CITIZEN: ${{ github.event.pull_request.user.login }}
+        run: |
+          # $CITIZEN is a GitHub username: [A-Za-z0-9-] only, and quoted here
+          # regardless. It is used in a commit message, never in a path.
+          if [ -z "$(git status --porcelain .shodann)" ]; then
+            echo "No ledger change to record."
+            exit 0
+          fi
+          git config user.name  "shodann[bot]"
+          git config user.email "shodann[bot]@users.noreply.github.com"
+          git add .shodann
+          git commit -m "Record velocity for @${CITIZEN}"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
