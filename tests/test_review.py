@@ -98,6 +98,30 @@ def test_a_sparse_payload_does_not_crash() -> None:
 # --- metrics --------------------------------------------------------------
 
 
+def test_build_artifacts_are_not_counted_twice(tmp_path) -> None:
+    """The workflow runs `pip install .` before it reviews.
+
+    That leaves a copy of every module under build/, and the first live run
+    counted both halves - inflating the first citizen's baseline to 106 test
+    functions when the tree held 53. An inflated baseline makes every later
+    submission read as a regression, which is the one failure this system
+    cannot tolerate.
+    """
+    source = tmp_path / "src" / "shodann"
+    source.mkdir(parents=True)
+    (source / "thing.py").write_text("def test_one():\n    pass\n", encoding="utf-8")
+
+    installed = tmp_path / "build" / "lib" / "shodann"
+    installed.mkdir(parents=True)
+    (installed / "thing.py").write_text("def test_one():\n    pass\n", encoding="utf-8")
+
+    egg = tmp_path / "shodann.egg-info"
+    egg.mkdir()
+    (egg / "generated.py").write_text("def test_two():\n    pass\n", encoding="utf-8")
+
+    assert collect_metrics(tmp_path).test_count == 1
+
+
 def test_metrics_ignore_the_virtualenv(tmp_path) -> None:
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "thing.py").write_text(
