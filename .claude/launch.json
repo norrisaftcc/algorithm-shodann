@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "generated-html",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "C:/Users/norrisa/AppData/Local/Temp/claude/D--dev-github-algorithm-shodann/45913b59-1a12-455f-a584-3a6ba734907c/scratchpad/preview_server.py",
+        "C:/Users/norrisa/AppData/Local/Temp/claude/D--dev-github-algorithm-shodann/45913b59-1a12-455f-a584-3a6ba734907c/scratchpad"
+      ],
+      "port": 8765
+    }
+  ]
+}

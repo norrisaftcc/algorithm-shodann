@@ -111,6 +111,32 @@ Three reasons this file exists:
 
 ---
 
+## 6. "from 0% to 218 complexity" — the prompt's defect, not the model's
+
+**Where:** a controlled trial, same prompt and context through `llama3.2:3b` and `llama3.1:8b`, run three times as the fix was corrected.
+
+**The question:** entry 2 left it open whether the fabrication was a size problem or a structural one.
+
+**Round one — coverage sent as `0.0`.** Both models celebrated it. The 8B: *"a coverage delta of 0.0% to 0.0%!"* The 3B invented `df` and `dataFrame` as variable names it had never seen. Both were behaving correctly given what they were told: the prompt handed over a coverage reading of zero, a delta of zero, and an instruction to celebrate deltas. **A zero handed to a model is a measurement, and it will be read as one.**
+
+**Round two — cells filled with the words `not instrumented`.** The 8B stopped celebrating and correctly recommended *"instrumenting their test coverage to accurately measure progress"* — but narrated *"improving their test coverage from not instrumented to not instrumented"*. A table row with Previous and Current columns implies a progression whatever you put in it. The 3B got worse: *"a delta of 217 points"*, plus five invented identifiers.
+
+**Round three — the rows dropped entirely**, replaced by a plain statement that no coverage tool ran and no figure exists. The 8B: clean. Zero contract violations, zero invented tokens, and a grounded suggestion to add automated testing. **A row that is not there cannot be narrated.**
+
+**What the 3B did in round three, and why it is the important half:** it passed every structural check — zero violations, would have posted as-is — while claiming the citizen had *"rapidly improved their test coverage from 0% to 218 complexity"*. It took the complexity figure and called it coverage. It also invented `test_result`, `commit_hash` and `README.md`.
+
+**A contract-clean lie is worse than a contract violation**, because nothing stops it. The validator checks structure, vocabulary and length. It has no view of truth, and cannot acquire one by being made stricter.
+
+**Conclusions, all three worth keeping:**
+
+1. **The absent-versus-zero defect was structural.** No model size fixes it, and the fix is in the prompt: do not send an unmeasured quantity as a number.
+2. **Local inference is viable at 8B and not at 3B.** The floor is not contract compliance — the 3B clears that — it is the ability to track which number means what. That is the honest answer to "can this run on a laptop with no key in a safe": yes, at about eight billion parameters.
+3. **A groundedness probe is cheap and the validator should probably have one.** The trial harness flagged every fabrication automatically by extracting backticked tokens from the response and checking whether they appear anywhere in the prompt. Three lines of regex caught what a purpose-built validator could not.
+
+**Guarded by:** `test_uninstrumented_coverage_says_so_rather_than_reporting_zero` and `test_instrumented_coverage_still_reports_normally`.
+
+---
+
 ## What the pattern says
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had.

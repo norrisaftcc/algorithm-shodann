@@ -62,8 +62,8 @@ You measure dy/dx (rate of change), not y (absolute position).
 | **Clearance Level** | {{ CLEARANCE_NAME }} ({{ CLEARANCE_NUMBER }}) |
 | **Program Week** | {{ CURRENT_WEEK }} |
 | **Previous Submissions** | {{ PR_COUNT }} PRs |
-| **Last Coverage** | {{ PREV_COVERAGE }}% |
-| **Iteration Streak** | {{ PREV_STREAK }} commits |
+{% if COVERAGE_INSTRUMENTED %}| **Last Coverage** | {{ PREV_COVERAGE }} |
+{% endif %}| **Iteration Streak** | {{ PREV_STREAK }} commits |
 
 ## Submission Context
 
@@ -111,14 +111,20 @@ You measure dy/dx (rate of change), not y (absolute position).
 |--------|-------|
 | **Tests Passed** | {{ TESTS_PASSED }} |
 | **Tests Failed** | {{ TESTS_FAILED }} |
-| **Coverage** | {{ CURRENT_COVERAGE }}% |
+{% if COVERAGE_INSTRUMENTED %}| **Coverage** | {{ CURRENT_COVERAGE }} |
+{% endif %}
 
 ## Growth Velocity Metrics
 
 | Metric | Previous | Current | Delta |
 |--------|----------|---------|-------|
-| **Coverage** | {{ PREV_COVERAGE }}% | {{ CURRENT_COVERAGE }}% | {{ COVERAGE_DELTA }}% |
-| **Complexity** | {{ PREV_COMPLEXITY }} | {{ CURRENT_COMPLEXITY }} | {{ COMPLEXITY_DELTA }} |
+{% if COVERAGE_INSTRUMENTED %}| **Coverage** | {{ PREV_COVERAGE }} | {{ CURRENT_COVERAGE }} | {{ COVERAGE_DELTA }} |
+{% endif %}| **Complexity** | {{ PREV_COMPLEXITY }} | {{ CURRENT_COMPLEXITY }} | {{ COMPLEXITY_DELTA }} |
+{% if not COVERAGE_INSTRUMENTED %}
+**Coverage was not measured this cycle.** No coverage tool ran, so no coverage
+figure and no coverage delta exist. Do not report, infer, or celebrate a
+coverage number. The growth in this submission is carried by the other metrics.
+{% endif %}
 
 **Velocity Score**: {{ VELOCITY_SCORE }}
 **Iterations This PR**: {{ ITERATION_COUNT }}
@@ -265,9 +271,9 @@ Do NOT use emojis within paragraph text except for:
 | `{{ CLEARANCE_NUMBER }}` | Numeric clearance (1-6) | `3` |
 | `{{ CURRENT_WEEK }}` | Environment variable | `6` |
 | `{{ PR_COUNT }}` | From citizen history file | `5` |
-| `{{ PREV_COVERAGE }}` | From citizen history file | `45` |
-| `{{ CURRENT_COVERAGE }}` | From pytest-cov output | `52` |
-| `{{ COVERAGE_DELTA }}` | Calculated: current - previous | `+7` |
+| `{{ PREV_COVERAGE }}` | From citizen history file, carries its own unit | `45%` |
+| `{{ CURRENT_COVERAGE }}` | From pytest-cov, or `not instrumented` | `52%` |
+| `{{ COVERAGE_DELTA }}` | Calculated, or `not instrumented` | `+7%` |
 | `{{ VELOCITY_SCORE }}` | From velocity engine | `4.5` |
 | `{{ ITERATION_COUNT }}` | Git commit count in PR | `3` |
 | `{{ SYNTAX_REPORT }}` | From py_compile step | `[report text]` |

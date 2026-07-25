@@ -212,6 +212,10 @@ def review(
             files_changed=facts["files_changed"],
             lines_added=facts["lines_added"],
             lines_removed=facts["lines_removed"],
+            # Rung 1 runs no coverage tool, so the reading is absent rather
+            # than zero. Saying so is the difference between a model reporting
+            # a gap and a model celebrating one.
+            coverage_instrumented=False,
         )
         # Note the asymmetry: `root` is the citizen's repository, but the
         # prompt library is SHODANN's own and is read relative to the working
