@@ -6,28 +6,28 @@
     "handle": null
   },
   "clearance_level": 2,
-  "first_submission": "2026-07-25T23:02:38Z",
-  "last_updated": "2026-07-25T23:02:38Z",
+  "first_submission": "2026-07-25T23:08:59Z",
+  "last_updated": "2026-07-25T23:08:59Z",
   "baseline_established": true,
   "pr_count": 1,
   "iteration_streak": 1,
   "rage_state_encounters": 0,
   "last_metrics": {
     "coverage": 0.0,
-    "test_count": 106,
-    "complexity": 277,
-    "loc": 5419,
-    "functions": 277,
-    "docstrings": 197,
+    "test_count": 110,
+    "complexity": 204,
+    "loc": 3436,
+    "functions": 204,
+    "docstrings": 127,
     "lint_issues": 0,
     "syntax_errors": 0
   },
-  "last_velocity": 401.28,
+  "last_velocity": 328.3,
   "velocity_trend": "new",
   "velocity_history": [
     {
-      "score": 401.28,
-      "date": "2026-07-25T23:02:38Z"
+      "score": 328.3,
+      "date": "2026-07-25T23:08:59Z"
     }
   ]
 }

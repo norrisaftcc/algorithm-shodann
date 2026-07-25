@@ -39,6 +39,23 @@ from .velocity import CodeMetrics, VelocityResult, calculate_velocity
 
 __all__ = ["collect_metrics", "facts_only_comment", "main", "pr_facts", "review"]
 
+EXCLUDED_DIRS = frozenset(
+    {
+        ".venv",
+        "venv",
+        ".git",
+        "node_modules",
+        "site-packages",
+        # `pip install .` leaves a copy of every module under build/, and the
+        # workflow installs before it reviews. Counting both halves doubled
+        # the first citizen's baseline on the very first live run - and an
+        # inflated baseline makes every later submission look like a
+        # regression, which is the one failure this system cannot tolerate.
+        "build",
+        "dist",
+    }
+)
+
 
 def pr_facts(event: dict) -> dict:
     """Pull the submission facts out of a GitHub pull_request event payload."""
@@ -66,7 +83,7 @@ def collect_metrics(root: Path | str = ".") -> CodeMetrics:
     """
     loc = tests = functions = docstrings = 0
     for path in sorted(Path(root).rglob("*.py")):
-        if any(part in {".venv", "node_modules", ".git"} for part in path.parts):
+        if any(part in EXCLUDED_DIRS or part.endswith(".egg-info") for part in path.parts):
             continue
         try:
             body = path.read_text(encoding="utf-8")

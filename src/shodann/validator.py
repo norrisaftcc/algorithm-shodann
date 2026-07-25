@@ -265,7 +265,14 @@ def _prose(text: str) -> str:
 
 
 def _headings(text: str) -> list[str]:
-    return [match.group(1).strip() for match in _HEADING.finditer(text)]
+    """Section headings, excluding anything inside a code fence.
+
+    A Python comment is a markdown heading to a regex. The first live run had
+    a model illustrate a fix with `# Before` / `# After` inside a fenced
+    example, and the validator reported two phantom sections it had invented
+    out of the student's own code.
+    """
+    return [match.group(1).strip() for match in _HEADING.finditer(_FENCED.sub("", text))]
 
 
 def _strip_emoji(value: str) -> str:
