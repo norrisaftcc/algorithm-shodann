@@ -17,6 +17,8 @@ from pathlib import Path
 
 from .state import (
     CITIZENS_DIR,
+    KIND_AGENT,
+    KIND_HUMAN,
     TREND_ASCENDING,
     TREND_DESCENDING,
     TREND_NEW,
@@ -24,7 +26,19 @@ from .state import (
     CitizenRecord,
 )
 
-__all__ = ["generate_leaderboard", "load_all_citizens"]
+__all__ = [
+    "AGENT_VIEW_MIN_CLEARANCE",
+    "ClearanceRequired",
+    "generate_leaderboard",
+    "load_all_citizens",
+    "may_view",
+]
+
+
+def _board_name(kind: str | None) -> str:
+    if kind == KIND_AGENT:
+        return "Agent Fleet"
+    return "All Citizens" if kind is None else str(kind).title()
 
 TREND_GLYPHS = {
     TREND_ASCENDING: "\U0001f4c8",
@@ -60,21 +74,63 @@ def load_all_citizens(root: Path | str = ".") -> list[CitizenRecord]:
     return records
 
 
-def generate_leaderboard(root: Path | str = ".", *, generated_at: str | None = None) -> str:
-    """Render the full leaderboard as markdown.
+AGENT_VIEW_MIN_CLEARANCE = 3
+"""ORANGE. Below it, a citizen is not shown agent data and is not shown that it exists."""
+
+
+class ClearanceRequired(PermissionError):
+    """A viewer asked for a board their band does not open."""
+
+
+def may_view(kind: str | None, clearance: int) -> bool:
+    """Whether a citizen at ``clearance`` may open a board of ``kind``."""
+    return kind == KIND_HUMAN or clearance >= AGENT_VIEW_MIN_CLEARANCE
+
+
+def generate_leaderboard(
+    root: Path | str = ".",
+    *,
+    kind: str | None = KIND_HUMAN,
+    viewer_clearance: int | None = None,
+    generated_at: str | None = None,
+) -> str:
+    """Render one board as markdown.
+
+    Boards partition by ``kind`` - see design_docs/LEADERBOARD.md. A human
+    citizen and an agent are in different modes, the way walking and driving
+    are different modes: same units, same destination, meaningless comparison.
+    Pass ``kind=None`` for the mixed view, which is a specialist instrument
+    and never the default.
 
     Returns the document even when there are no citizens yet - an empty course
     is a valid state, not an error worth exiting on.
     """
+    if viewer_clearance is not None and not may_view(kind, viewer_clearance):
+        raise ClearanceRequired(
+            f"agent data requires clearance {AGENT_VIEW_MIN_CLEARANCE} (ORANGE); "
+            f"viewer holds {viewer_clearance}"
+        )
+
     records = load_all_citizens(root)
+    if kind is not None:
+        # Partition first, then rank. Ranking a mixed list and filtering
+        # afterwards produces the right names against the wrong denominator.
+        records = [record for record in records if record.kind == kind]
     records.sort(key=lambda record: record.last_velocity, reverse=True)
 
     lines = [
-        HEADER,
+        HEADER if kind == KIND_HUMAN else f"{HEADER} - {_board_name(kind)}",
         "",
         "> *The Algorithm celebrates those who grow, not those who rest.*",
         "",
     ]
+    if kind is None:
+        lines += [
+            "**Mixed-kind view.** Human citizens and agents appear in one ranking here. "
+            "They are not comparable; this board exists for fleet analysis, not for "
+            "assessment. See `design_docs/LEADERBOARD.md`.",
+            "",
+        ]
     if generated_at:
         lines += [f"**Last Updated**: {generated_at}", ""]
 
