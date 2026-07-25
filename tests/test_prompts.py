@@ -86,6 +86,7 @@ def test_base_template_renders_with_nothing_left_unresolved() -> None:
 def test_build_context_supplies_every_variable_the_template_declares() -> None:
     """Enumerate the template's variables rather than trusting a hand-written list."""
     source = extract_template(PROMPTS / BASE_TEMPLATE)
+    # noqa: S701 - parse-only, and markdown for an LLM is never HTML for a browser
     environment = Environment(undefined=StrictUndefined, autoescape=False)  # noqa: S701
     declared = meta.find_undeclared_variables(environment.parse(source))
 
