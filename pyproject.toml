@@ -3,7 +3,7 @@ name = "shodann"
 version = "0.1.0"
 description = "The Algorithm's benevolent educational oversight system"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["jinja2>=3.1"]
 
 [project.optional-dependencies]
 # ruff is pinned exactly, pytest is not. ruff's C901 output feeds the velocity

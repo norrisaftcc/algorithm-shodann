@@ -42,6 +42,21 @@ TREND_STABLE = "stable"
 KIND_HUMAN = "human"
 KIND_AGENT = "agent"
 
+CLEARANCE_NAMES = {
+    1: "INFRARED",
+    2: "RED",
+    3: "ORANGE",
+    4: "YELLOW",
+    5: "GREEN",
+    6: "BLUE+",
+}
+"""Clearance ladder. Anything above 6 is BLUE+; see design_docs/CLEARANCE_REGISTER.md."""
+
+
+def clearance_name(level: int) -> str:
+    """Name for a clearance level, saturating at BLUE+ rather than failing."""
+    return CLEARANCE_NAMES.get(max(1, min(level, 6)), "RED")
+
 VISIBILITY_NAMED = "named"
 VISIBILITY_ANONYMOUS = "anonymous"
 

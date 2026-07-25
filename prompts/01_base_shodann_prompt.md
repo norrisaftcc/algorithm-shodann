@@ -18,6 +18,11 @@ This prompt follows the 4-layer architecture:
 
 ## Full Prompt Template
 
+Everything between the TEMPLATE markers below is what the renderer extracts and
+sends to the model. Text outside them - including the variable reference table
+further down - is documentation for humans and is never rendered.
+
+<!-- TEMPLATE:BEGIN -->
 ```
 # =============================================================================
 # LAYER 0: SHODANN IDENTITY
@@ -247,6 +252,7 @@ Do NOT use emojis within paragraph text except for:
 - [UPWARD CHART EMOJI] when noting positive delta
 - [DOWNWARD CHART EMOJI] when noting negative delta (rare, reframe as opportunity)
 ```
+<!-- TEMPLATE:END -->
 
 ---
 
