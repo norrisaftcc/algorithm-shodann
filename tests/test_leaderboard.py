@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import json
 
-from shodann.leaderboard import generate_leaderboard, load_all_citizens
-from shodann.state import VISIBILITY_ANONYMOUS, CitizenRecord, Display, citizen_path
+import pytest
+
+from shodann.leaderboard import ClearanceRequired, generate_leaderboard, load_all_citizens
+from shodann.state import (
+    KIND_AGENT,
+    VISIBILITY_ANONYMOUS,
+    CitizenRecord,
+    Display,
+    citizen_path,
+)
 
 
 def write_record(root, citizen, velocity, *, anonymous=False, handle=None, pr_count=1):
@@ -52,6 +60,83 @@ def test_anonymous_citizens_appear_without_their_username(tmp_path) -> None:
 
     assert "Citizen-7" in document
     assert "shyperson" not in document
+
+
+# --- the partition rule ---------------------------------------------------
+
+
+def write_agent(root, name, velocity):
+    record = CitizenRecord(citizen=name, kind=KIND_AGENT, last_velocity=velocity, pr_count=9)
+    path = citizen_path(name, root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record.to_dict()), encoding="utf-8")
+
+
+def test_agents_never_appear_on_the_citizen_board(tmp_path) -> None:
+    """Walking is not driving. An agent shipping fast is a different mode."""
+    write_record(tmp_path, "student", 4.0)
+    write_agent(tmp_path, "oracle-warden", 900.0)
+
+    document = generate_leaderboard(tmp_path)
+
+    assert "@student" in document
+    assert "oracle-warden" not in document
+    assert "| 1 |" in document and "@student" in document.splitlines()[
+        next(i for i, line in enumerate(document.splitlines()) if line.startswith("| 1 "))
+    ], "the student is rank 1 of humans, not rank 2 of everything"
+
+
+def test_the_agent_board_is_its_own_document(tmp_path) -> None:
+    write_record(tmp_path, "student", 4.0)
+    write_agent(tmp_path, "oracle-warden", 900.0)
+
+    document = generate_leaderboard(tmp_path, kind=KIND_AGENT)
+
+    assert "oracle-warden" in document
+    assert "@student" not in document
+    assert "Agent Fleet" in document
+
+
+def test_the_mixed_view_says_what_it_is(tmp_path) -> None:
+    write_record(tmp_path, "student", 4.0)
+    write_agent(tmp_path, "oracle-warden", 900.0)
+
+    document = generate_leaderboard(tmp_path, kind=None)
+
+    assert "Mixed-kind view" in document
+    assert "not comparable" in document
+
+
+@pytest.mark.parametrize("clearance", [1, 2])
+def test_below_orange_cannot_open_agent_data(tmp_path, clearance: int) -> None:
+    """The gate is on the viewer, not the data - and it refuses at generation."""
+    with pytest.raises(ClearanceRequired, match="ORANGE"):
+        generate_leaderboard(tmp_path, kind=KIND_AGENT, viewer_clearance=clearance)
+    with pytest.raises(ClearanceRequired):
+        generate_leaderboard(tmp_path, kind=None, viewer_clearance=clearance)
+
+
+@pytest.mark.parametrize("clearance", [3, 4, 5, 6])
+def test_orange_and_up_may_open_it(tmp_path, clearance: int) -> None:
+    write_agent(tmp_path, "oracle-warden", 900.0)
+    assert "oracle-warden" in generate_leaderboard(
+        tmp_path, kind=KIND_AGENT, viewer_clearance=clearance
+    )
+
+
+@pytest.mark.parametrize("clearance", [1, 2, 3, 6])
+def test_every_band_may_open_their_own_board(tmp_path, clearance: int) -> None:
+    write_record(tmp_path, "student", 4.0)
+    assert "@student" in generate_leaderboard(tmp_path, viewer_clearance=clearance)
+
+
+def test_a_record_without_a_kind_partitions_as_human(tmp_path) -> None:
+    """A missing discriminator must not make a citizen vanish from their own board."""
+    path = citizen_path("legacy", tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"citizen": "legacy", "last_velocity": 3.0}), encoding="utf-8")
+
+    assert "@legacy" in generate_leaderboard(tmp_path)
 
 
 def test_unreadable_ledger_is_skipped_not_fatal(tmp_path) -> None:
