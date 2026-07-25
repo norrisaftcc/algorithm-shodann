@@ -153,6 +153,24 @@ def test_sections_out_of_order_block() -> None:
     assert "section_order" in codes(validate(reordered))
 
 
+def test_comments_in_a_code_fence_are_not_sections() -> None:
+    """A Python comment is a markdown heading to a regex.
+
+    Found on the first live run: a model illustrated a fix with `# Before`
+    and `# After` inside a fenced example, and the validator reported two
+    phantom sections built out of the student's own code.
+    """
+    text = GOOD_STANDARD.replace(
+        "- The Algorithm suggests extracting the duplicated lookup into a helper.",
+        "- The Algorithm suggests clearer naming:\n\n"
+        "```python\n# Before\nx = 1\n# After\nuser_age = 1\n```\n",
+    )
+    violations = validate(text)
+
+    assert "unexpected_section" not in codes(violations)
+    assert violations == []
+
+
 def test_an_extra_section_is_advisory_not_blocking() -> None:
     text = GOOD_STANDARD.replace(
         "---\n\n*The Algorithm sees",
