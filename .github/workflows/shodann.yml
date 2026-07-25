@@ -45,6 +45,13 @@ jobs:
       - name: Check out the submission
         uses: actions/checkout@v7
         with:
+          # The PR head branch, not the default merge ref. On `pull_request`
+          # the default checkout is a synthetic merge of head into base, and
+          # HEAD is detached at a commit that exists nowhere - so the ledger
+          # push below sent that merge commit to the citizen's branch on every
+          # run. Checking out the real branch tip means the push carries the
+          # ledger commit and nothing else.
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Set up Python

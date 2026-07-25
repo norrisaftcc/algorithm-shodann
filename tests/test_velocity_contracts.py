@@ -125,6 +125,24 @@ def test_the_phrase_is_not_repeated_to_veterans() -> None:
 # --- output contract ------------------------------------------------------
 
 
+def test_a_citizen_with_tests_is_not_told_to_write_their_first() -> None:
+    """Uninstrumented coverage reads as zero, and zero is not the same as none.
+
+    Live defect: rung 1 measures no coverage, so every reading is 0.0 - and
+    keying the suggestion on coverage told a citizen with 110 test functions
+    to write their first test, on every single review.
+    """
+    veteran = calculate_velocity(
+        metrics(coverage=0.0, test_count=110, functions=200), metrics(test_count=103), 1
+    )
+    assert not any("First test" in line for line in veteran.opportunities)
+
+
+def test_a_citizen_with_no_tests_still_is() -> None:
+    beginner = calculate_velocity(metrics(coverage=0.0, test_count=0, functions=6), None, 1)
+    assert any("First test" in line for line in beginner.opportunities)
+
+
 def test_celebrations_are_never_empty() -> None:
     """Even a submission that improved nothing gets something true and kind said about it."""
     flat = calculate_velocity(metrics(), metrics(), 0)

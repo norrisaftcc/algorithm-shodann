@@ -210,15 +210,33 @@ def build_context(
     security_section: str = "",
     rage_section: str = "",
     mode_statement: str = "NORMAL (Growth Celebration)",
+    coverage_instrumented: bool = True,
 ) -> dict:
     """Map domain objects onto the template's variables.
 
     Every placeholder in the base template gets a value here - a missing one
     would raise at render time, which is the point, but it should never get
     that far in production.
+
+    ``coverage_instrumented=False`` sends the literal words ``not
+    instrumented`` in place of every coverage figure. A zero handed to a model
+    is a measurement, and it will be read as one: both a 3B and an 8B model,
+    given `0.0` and told to celebrate deltas, congratulated a citizen on "a
+    coverage delta of 0.0% to 0.0%". That is the prompt's defect, not the
+    model's, and no larger model fixes it.
     """
     previous = record.last_metrics or CodeMetrics.baseline()
     current = result.deltas
+
+    # When coverage is absent the rows are dropped entirely rather than filled
+    # with a phrase. Filling them was tried: an 8B model dutifully narrated
+    # "improving their test coverage from not instrumented to not
+    # instrumented", because a table row with a Previous and a Current column
+    # implies a progression whatever you put in it. A row that is not there
+    # cannot be narrated.
+    previous_coverage = f"{round(previous.coverage, 1)}%"
+    current_coverage = f"{round(previous.coverage + current.coverage, 1)}%"
+    coverage_delta = f"{round(current.coverage, 1):+}%"
 
     return {
         "MODE_STATEMENT": mode_statement,
@@ -227,7 +245,8 @@ def build_context(
         "CLEARANCE_NUMBER": record.clearance_level,
         "CURRENT_WEEK": current_week,
         "PR_COUNT": record.pr_count,
-        "PREV_COVERAGE": round(previous.coverage, 1),
+        "COVERAGE_INSTRUMENTED": coverage_instrumented,
+        "PREV_COVERAGE": previous_coverage,
         "PREV_STREAK": record.iteration_streak,
         "PR_TITLE": pr_title,
         "FILES_CHANGED": files_changed,
@@ -242,11 +261,11 @@ def build_context(
         "TEST_REPORT": test_report,
         "TESTS_PASSED": tests_passed,
         "TESTS_FAILED": tests_failed,
-        "CURRENT_COVERAGE": round(previous.coverage + current.coverage, 1),
+        "CURRENT_COVERAGE": current_coverage,
         "PREV_COMPLEXITY": previous.complexity,
         "CURRENT_COMPLEXITY": previous.complexity + current.complexity,
         "COMPLEXITY_DELTA": current.complexity,
-        "COVERAGE_DELTA": round(current.coverage, 1),
+        "COVERAGE_DELTA": coverage_delta,
         "VELOCITY_SCORE": result.score,
         "VELOCITY_ASSESSMENT": result.assessment,
         "SECURITY_SECTION": security_section,

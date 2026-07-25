@@ -224,11 +224,20 @@ def _first_test_note(current: CodeMetrics, previous: CodeMetrics, config: Veloci
 
 
 def _coverage_note(deltas: MetricDeltas, current: CodeMetrics) -> Note:
+    """Celebrate coverage movement; suggest a first test when there are none.
+
+    The suggestion keys on ``test_count``, not on ``coverage == 0``. A zero
+    coverage reading means one of two very different things - nobody has
+    written a test, or nobody has measured - and the predecessor could not
+    tell them apart. Until the hard-analysis job exists nothing measures
+    coverage at all, so keying on coverage told a citizen with 110 test
+    functions to write their first one, on every single review.
+    """
     if deltas.coverage > 10:
         return ([f"Coverage jumped {deltas.coverage:.1f}%! Significant testing investment."], [])
     if deltas.coverage > 0:
         return ([f"Coverage improved by {deltas.coverage:.1f}%. Tests validate your growth."], [])
-    if current.coverage == 0:
+    if current.test_count == 0:
         return ([], [
             "First test = first step to confidence. Consider adding one test this iteration."
         ])

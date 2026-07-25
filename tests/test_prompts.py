@@ -131,6 +131,47 @@ def test_rendered_prompt_carries_the_facts_it_was_given() -> None:
     assert "ORANGE" in rendered
     assert "Add inventory tests" in rendered
     assert "52.0%" in rendered
+    assert "+7.0%" in rendered, "the delta carries its own sign and unit"
+
+
+def test_uninstrumented_coverage_says_so_rather_than_reporting_zero() -> None:
+    """A zero handed to a model is a measurement, and it will be read as one.
+
+    Given `0.0` and told to celebrate deltas, both a 3B and an 8B model
+    congratulated a citizen on "a coverage delta of 0.0% to 0.0%". That is the
+    prompt's defect, not the model's, and no larger model fixes it.
+    """
+    record = CitizenRecord(citizen="octocat", clearance_level=2, pr_count=2)
+    result = calculate_velocity(CodeMetrics(test_count=9), None, 2)
+    context = build_context(
+        result,
+        record,
+        pr_title="Wire the analysis job",
+        files_changed=2,
+        lines_added=40,
+        lines_removed=3,
+        coverage_instrumented=False,
+    )
+    rendered = render_prompt(context, prompts_dir=PROMPTS)
+    coverage_rows = [line for line in rendered.splitlines() if "**Coverage**" in line]
+
+    assert not coverage_rows, "a row with Previous and Current columns implies a progression"
+    assert "Coverage was not measured this cycle." in rendered
+    assert "Do not report, infer, or celebrate" in rendered
+
+    # The complexity row must survive the branch it shares a table with.
+    assert "**Complexity**" in rendered
+
+    # The prime directive's "0% to 30%" is illustrative prose, not a reading,
+    # and must survive untouched.
+    assert "0% to 30% test" in rendered
+
+
+def test_instrumented_coverage_still_reports_normally() -> None:
+    rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
+
+    assert "**Coverage**" in rendered
+    assert "Coverage was not measured" not in rendered
 
 
 # --- the syntax we cannot render -----------------------------------------
