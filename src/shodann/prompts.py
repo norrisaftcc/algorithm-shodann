@@ -34,7 +34,9 @@ from pathlib import Path
 
 from jinja2 import Environment, StrictUndefined
 
+from .clearance import clearance_instructions, iteration_guidance
 from .state import CitizenRecord, clearance_name
+from .validator import STANDARD, ResponseSpec, for_clearance
 from .velocity import CodeMetrics, VelocityResult
 
 __all__ = [
@@ -206,7 +208,7 @@ def build_context(
     tests_passed: int = 0,
     tests_failed: int = 0,
     style_issue_count: int = 0,
-    clearance_instructions: str = "",
+    spec: ResponseSpec | None = None,
     security_section: str = "",
     rage_section: str = "",
     mode_statement: str = "NORMAL (Growth Celebration)",
@@ -227,6 +229,19 @@ def build_context(
     """
     previous = record.last_metrics or CodeMetrics.baseline()
     current = result.deltas
+
+    # The format rules the prompt states are derived from the spec the
+    # validator enforces. Anything else is two sources of truth pretending to
+    # be one: the template used to instruct "Recommended Iteration" while the
+    # validator demanded "Observations" at BLUE+, so every review at that band
+    # was rejected, retried, rejected and dropped to the fallback.
+    spec = spec or for_clearance(STANDARD, record.clearance_level)
+    iteration_heading = spec.headings[-1] if spec.headings else "Recommended Iteration"
+    iteration_limit = (
+        "Provide exactly 1 recommended next iteration"
+        if iteration_heading == "Recommended Iteration"
+        else f"Provide at most 1 item under {iteration_heading}, or omit the section"
+    )
 
     # When coverage is absent the rows are dropped entirely rather than filled
     # with a phrase. Filling them was tried: an 8B model dutifully narrated
@@ -269,8 +284,20 @@ def build_context(
         "VELOCITY_SCORE": result.score,
         "VELOCITY_ASSESSMENT": result.assessment,
         "SECURITY_SECTION": security_section,
-        "CLEARANCE_INSTRUCTIONS": clearance_instructions,
+        "CLEARANCE_INSTRUCTIONS": clearance_instructions(record.clearance_level),
         "RAGE_SECTION_IF_ACTIVE": rage_section,
+        "ITERATION_HEADING": iteration_heading,
+        # design_docs/CLEARANCE_REGISTER.md specifies a magnifier for the
+        # peer-register section; a wrench is for someone being handed a task.
+        "ITERATION_MARK": (
+            "[MAGNIFYING GLASS EMOJI]"
+            if iteration_heading == "Observations"
+            else "[WRENCH EMOJI]"
+        ),
+        "ITERATION_GUIDANCE": iteration_guidance(spec, record.clearance_level),
+        "ITERATION_LIMIT": iteration_limit,
+        "WORD_CAP": spec.max_words,
+        "MAX_OPPORTUNITIES": spec.max_opportunities,
     }
 
 

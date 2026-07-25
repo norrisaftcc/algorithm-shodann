@@ -224,6 +224,9 @@ def review(
             files_changed=facts["files_changed"],
             lines_added=facts["lines_added"],
             lines_removed=facts["lines_removed"],
+            # The same spec the response will be judged against, so the
+            # instructions and the checks cannot disagree.
+            spec=spec,
             # Rung 1 runs no coverage tool, so the reading is absent rather
             # than zero. Saying so is the difference between a model reporting
             # a gap and a model celebrating one.
