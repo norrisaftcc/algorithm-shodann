@@ -434,10 +434,27 @@ State is stored in repository files (no external database):
 |-----------|--------|-----------|
 | Orchestration | GitHub Actions | Native to platform, free tier, familiar to students |
 | LLM | Gemini API | Cost-effective, education-friendly, GitHub Action available |
-| Analysis Tools | Python ecosystem | flake8, pytest, bandit, radon - mature, well-documented |
+| Analysis Tools | Python ecosystem | ruff, pytest, bandit, pip-audit - see Toolchain decision below |
 | State Format | JSON | Human-readable, git-mergeable, universal parsing |
 
-**Language Decision (Pending)**: See Issue #9 for Python vs JavaScript discussion. Recommendation leans toward Python for pedagogical clarity.
+### Decisions (2026-07-25)
+
+**Language: Python.** Every hard-analysis tool is Python-native, the graded code is Python, JS/TS analysis is out of scope for v1, and the maintainer implements in Python. `design_docs/growth-velocity.js` is retained as a reference oracle for differential testing, not as the runtime.
+
+**Repository topology: org-owned public repos, one per student, branch PRs — not forks.** Forks withhold secrets and issue a read-only token, which disables the LLM call, the PR comment, and state persistence. Same-repo branch PRs under a plain `pull_request` trigger keep all three working, and `pull_request_target` is not needed — which also avoids the `actions/checkout` v7 restriction on checking out fork heads. Public repos additionally get CodeQL, Dependabot, and secret scanning free; these are a complementary signal surfaced in the Security tab, never the data source for SHODANN's comment. GitHub Classroom's 2026-08-28 decommission does not affect this shape, but any roster and assignment-distribution plumbing that relied on Classroom needs a separate replacement.
+
+**State: local truth, central mirror.** The authoritative citizen record lives in the student's own repo at `.shodann/citizens/{username}.json`, written by the same workflow run that produced it — no cross-repo writes during a PR, no shared write contention. A scheduled aggregation job in the course repo reads across student repos and regenerates `METRICS.md`. Schema is snake_case with unquoted numbers, carries a `kind` discriminator (`human` | `agent`) so agent-team metrics can share the registry, and carries a `display` block so leaderboard participation is opt-in by name.
+
+**Leaderboard: public, opt-in names.** Every citizen appears; each chooses whether to appear under their GitHub username or an assigned handle. Ranking is by velocity, never by absolute skill (§7). Nobody is conscripted into a public ranking of their coursework.
+
+**Toolchain, frozen for cohort 1: ruff + pytest + bandit + pip-audit.**
+
+- **ruff** replaces flake8 and radon's cyclomatic complexity: one pinned binary, native GitHub annotations, `line-length = 100`. SHODANN names the flake8 rule equivalent alongside ruff's in feedback, so students recognize both toolchains in the wild.
+- **Maintainability Index is dropped**, and radon with it. "This function has 12 branches, split it" is actionable; "your MI is 64" is a composite a beginner cannot act on. Cyclomatic complexity via ruff `C901` is the complexity metric.
+- **pip-audit replaces safety**, which now requires account creation to scan, updates its free database monthly, and does not license that database for commercial use — unusable unattended in a course.
+- **bandit stays** for the RAGE STATE deep pass; ruff's `S` rules are a ported subset suitable for fast inline feedback only.
+
+This set is **frozen before the first cohort and must not change mid-course**: ruff's `C901` and radon's complexity numbers differ, and changing the metric resets every student's velocity baseline — the one quantity the entire product depends on holding still.
 
 ### Error Handling Strategy
 
