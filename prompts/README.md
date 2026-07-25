@@ -149,10 +149,12 @@ These words MUST NEVER appear in SHODANN output:
 ```yaml
 # Citizen Context
 CITIZEN_USERNAME: github.event.pull_request.user.login
-CLEARANCE_NAME: lookup from .shodann/clearances.json
-CLEARANCE_NUMBER: 1-6 numeric
+CLEARANCE_NAME: derived from clearance_level via the clearance ladder
+CLEARANCE_NUMBER: 1-6 numeric, from the citizen record
+CURRENT_WEEK: workflow env
 PR_COUNT: from citizen history file
 PREV_COVERAGE: from citizen history file
+PREV_STREAK: iteration_streak from citizen history file
 ITERATION_COUNT: git commit count in PR
 
 # Submission Data
@@ -173,15 +175,29 @@ CURRENT_COVERAGE: from pytest-cov
 
 # Calculated Metrics
 COVERAGE_DELTA: current - previous coverage
+PREV_COMPLEXITY: from citizen history file
+CURRENT_COMPLEXITY: previous + complexity delta
+COMPLEXITY_DELTA: from velocity engine
 VELOCITY_SCORE: from velocity engine
 VELOCITY_ASSESSMENT: text description of velocity state
 
-# Mode Flags
-RAGE_ACTIVE: boolean
-RAGE_REASON: text explanation of trigger
-FIRST_SUBMISSION: boolean
-EDGE_CASE_HANDLER: enum of handler type
+# Composed sections - assembled text, not scalars. Each needs its own
+# assembly step before the base template can be rendered.
+MODE_STATEMENT: "NORMAL (Growth Celebration)" or "RAGE STATE (Audit Mode)"
+HISTORY_NARRATIVE: one or two sentences of citizen history, facts only
+CLEARANCE_INSTRUCTIONS: from 03_clearance_variations.md, empty until wired
+SECURITY_SECTION: from 02_rage_state_addon.md, empty unless RAGE active
+RAGE_SECTION_IF_ACTIVE: security observations heading, empty unless RAGE active
 ```
+
+`shodann.prompts.build_context` is the authority on this list; the test suite
+asserts it supplies every variable the base template declares, so the two
+cannot drift apart silently. This table is a reading aid, not the contract.
+
+**Mode flags are not template variables.** `RAGE_ACTIVE`, `RAGE_REASON`,
+`FIRST_SUBMISSION` and `EDGE_CASE_HANDLER` select *which* template renders and
+what goes into the composed sections above. They are never bound into a
+template as `{{ VAR }}`, and adding them to a context would bind nothing.
 
 ---
 

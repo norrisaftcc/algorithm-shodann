@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from jinja2.exceptions import UndefinedError
 
 from shodann.prompts import (
     BASE_TEMPLATE,
+    EMOJI,
     UnsupportedTemplateSyntax,
     build_context,
     extract_template,
@@ -137,6 +139,32 @@ def test_rendered_prompt_carries_the_facts_it_was_given() -> None:
 def test_pseudo_control_flow_is_found_with_line_numbers() -> None:
     found = find_pseudo_syntax("a\n{{ IF X }}\nb\n{{ ENDIF }}\n")
     assert [number for number, _ in found] == [2, 4]
+
+
+@pytest.mark.parametrize("token", ["{{ EXAMPLE }}", "{{ EXAMPLES }}", "{{ END EXAMPLES }}"])
+def test_authoring_placeholders_are_detected_including_the_plural(token: str) -> None:
+    """`{{ EXAMPLES }}` is valid Jinja - a bare lookup - so it parses and then fails
+    at render time looking like an ordinary missing binding. It has to be caught here.
+    """
+    assert find_pseudo_syntax(token), f"{token} slipped past the detector"
+
+
+def test_every_bracketed_emoji_name_has_a_mapping() -> None:
+    """Covers templates that are not rendered yet.
+
+    An unmapped name does not raise - it passes through into a student's
+    section heading as literal bracket text. The day someone wires up 02 is
+    exactly the day nobody is checking for this.
+    """
+    pattern = re.compile(r"\[([A-Z][A-Z ]*EMOJI)\]")
+    unmapped: dict[str, set[str]] = {}
+    for path in sorted(PROMPTS.glob("*.md")):
+        names = set(pattern.findall(path.read_text(encoding="utf-8")))
+        missing = names - set(EMOJI)
+        if missing:
+            unmapped[path.name] = missing
+
+    assert not unmapped, f"bracketed emoji names with no mapping: {unmapped}"
 
 
 @pytest.mark.parametrize(
