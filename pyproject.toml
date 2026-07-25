@@ -6,7 +6,12 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.16"]
+# ruff is pinned exactly, pytest is not. ruff's C901 output feeds the velocity
+# score, and its numbers move between releases - an open bound would let a
+# routine reinstall reset every citizen's complexity baseline. pytest changes
+# nothing a citizen is measured on. Bumping the pin is a deliberate act that
+# ends a cohort's frozen window; see PRD section 8.
+dev = ["pytest>=8", "ruff==0.16.0"]
 
 [project.scripts]
 shodann-velocity = "shodann.cli:main"
