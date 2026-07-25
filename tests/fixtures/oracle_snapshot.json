@@ -1,0 +1,312 @@
+{
+  "_provenance": {
+    "source": "design_docs/growth-velocity.js",
+    "captured": "2026-07-25",
+    "how": "node design_docs/growth-velocity.js -c <citizen> --current current.json [--previous previous.json] -i <n>, run once per case in an isolated directory, stdout decoded as UTF-8",
+    "why": "Frozen so the Python port can be checked for transcription errors without Node ever entering CI. Keys are camelCase because that is what the JS emitted; the Python engine uses snake_case.",
+    "note": "Compared against ORACLE_CONFIG only. DEFAULT_CONFIG deliberately diverges on coverage weighting (PRD US-1.3) - see test_velocity_contracts.py."
+  },
+  "cases": {
+    "first_submission_typical": {
+      "current": {
+        "coverage": 30,
+        "testCount": 3,
+        "complexity": 8,
+        "loc": 120,
+        "functions": 6,
+        "docstrings": 2,
+        "lintIssues": 4,
+        "syntaxErrors": 0
+      },
+      "previous": null,
+      "iterations": 5,
+      "score": 74.96,
+      "deltas": {
+        "coverage": 30,
+        "testCount": 3,
+        "complexity": 8,
+        "loc": 120,
+        "functions": 6,
+        "docstrings": 2,
+        "lintIssues": -4
+      },
+      "assessment": "🚀 EXCEPTIONAL GROWTH DETECTED - The Algorithm is deeply pleased",
+      "celebrations": [
+        "5 commits shows healthy iteration patterns.",
+        "Coverage jumped 30.0%! Significant testing investment.",
+        "3 new test(s) added. The Algorithm approves.",
+        "Documentation improved. Future-you will be grateful.",
+        "Complexity growth backed by tests. Sustainable expansion."
+      ],
+      "opportunities": []
+    },
+    "steady_improvement": {
+      "current": {
+        "coverage": 52,
+        "testCount": 8,
+        "complexity": 14,
+        "loc": 320,
+        "functions": 12,
+        "docstrings": 5,
+        "lintIssues": 1,
+        "syntaxErrors": 0
+      },
+      "previous": {
+        "coverage": 30,
+        "testCount": 3,
+        "complexity": 8,
+        "loc": 120,
+        "functions": 6,
+        "docstrings": 2,
+        "lintIssues": 4,
+        "syntaxErrors": 0
+      },
+      "iterations": 3,
+      "score": 59.57,
+      "deltas": {
+        "coverage": 22,
+        "testCount": 5,
+        "complexity": 6,
+        "loc": 200,
+        "functions": 6,
+        "docstrings": 3,
+        "lintIssues": 3
+      },
+      "assessment": "🚀 EXCEPTIONAL GROWTH DETECTED - The Algorithm is deeply pleased",
+      "celebrations": [
+        "3 commits shows healthy iteration patterns.",
+        "Coverage jumped 22.0%! Significant testing investment.",
+        "5 new test(s) added. The Algorithm approves.",
+        "Documentation improved. Future-you will be grateful.",
+        "Complexity growth backed by tests. Sustainable expansion."
+      ],
+      "opportunities": []
+    },
+    "regression": {
+      "current": {
+        "coverage": 45,
+        "testCount": 7,
+        "complexity": 25,
+        "loc": 520,
+        "functions": 18,
+        "docstrings": 5,
+        "lintIssues": 6,
+        "syntaxErrors": 0
+      },
+      "previous": {
+        "coverage": 60,
+        "testCount": 10,
+        "complexity": 20,
+        "loc": 400,
+        "functions": 15,
+        "docstrings": 5,
+        "lintIssues": 2,
+        "syntaxErrors": 0
+      },
+      "iterations": 1,
+      "score": -33.55,
+      "deltas": {
+        "coverage": -15,
+        "testCount": -3,
+        "complexity": 5,
+        "loc": 120,
+        "functions": 3,
+        "docstrings": 0,
+        "lintIssues": -4
+      },
+      "assessment": "🔄 Refactoring phase detected - Foundation building in progress",
+      "celebrations": [
+        "Iteration count: 1. Every commit is progress."
+      ],
+      "opportunities": []
+    },
+    "empty_first": {
+      "current": {
+        "coverage": 0,
+        "testCount": 0,
+        "complexity": 0,
+        "loc": 0,
+        "functions": 0,
+        "docstrings": 0,
+        "lintIssues": 0,
+        "syntaxErrors": 0
+      },
+      "previous": null,
+      "iterations": 1,
+      "score": 0.5,
+      "deltas": {
+        "coverage": 0,
+        "testCount": 0,
+        "complexity": 0,
+        "loc": 0,
+        "functions": 0,
+        "docstrings": 0,
+        "lintIssues": 0
+      },
+      "assessment": "📊 Baseline established - Ready for growth acceleration",
+      "celebrations": [
+        "Iteration count: 1. Every commit is progress."
+      ],
+      "opportunities": [
+        "First test = first step to confidence. Consider adding one test this iteration."
+      ]
+    },
+    "heavy_iteration": {
+      "current": {
+        "coverage": 51,
+        "testCount": 5,
+        "complexity": 10,
+        "loc": 200,
+        "functions": 8,
+        "docstrings": 3,
+        "lintIssues": 2,
+        "syntaxErrors": 0
+      },
+      "previous": {
+        "coverage": 50,
+        "testCount": 5,
+        "complexity": 10,
+        "loc": 200,
+        "functions": 8,
+        "docstrings": 3,
+        "lintIssues": 2,
+        "syntaxErrors": 0
+      },
+      "iterations": 12,
+      "score": 24.2,
+      "deltas": {
+        "coverage": 1,
+        "testCount": 0,
+        "complexity": 0,
+        "loc": 0,
+        "functions": 0,
+        "docstrings": 0,
+        "lintIssues": 0
+      },
+      "assessment": "🚀 EXCEPTIONAL GROWTH DETECTED - The Algorithm is deeply pleased",
+      "celebrations": [
+        "12 iterations this PR! Exceptional commitment to incremental development.",
+        "Coverage improved by 1.0%. Tests validate your growth."
+      ],
+      "opportunities": []
+    },
+    "complexity_no_tests": {
+      "current": {
+        "coverage": 40,
+        "testCount": 5,
+        "complexity": 22,
+        "loc": 300,
+        "functions": 10,
+        "docstrings": 4,
+        "lintIssues": 3,
+        "syntaxErrors": 0
+      },
+      "previous": {
+        "coverage": 40,
+        "testCount": 5,
+        "complexity": 10,
+        "loc": 240,
+        "functions": 9,
+        "docstrings": 4,
+        "lintIssues": 3,
+        "syntaxErrors": 0
+      },
+      "iterations": 2,
+      "score": 2.66,
+      "deltas": {
+        "coverage": 0,
+        "testCount": 0,
+        "complexity": 12,
+        "loc": 60,
+        "functions": 1,
+        "docstrings": 0,
+        "lintIssues": 0
+      },
+      "assessment": "📊 Baseline established - Ready for growth acceleration",
+      "celebrations": [
+        "Iteration count: 2. Every commit is progress."
+      ],
+      "opportunities": [
+        "Complexity grew significantly. Consider adding tests to validate new logic."
+      ]
+    },
+    "first_gain_0_to_30": {
+      "current": {
+        "coverage": 30,
+        "testCount": 4,
+        "complexity": 10,
+        "loc": 200,
+        "functions": 8,
+        "docstrings": 3,
+        "lintIssues": 2,
+        "syntaxErrors": 0
+      },
+      "previous": {
+        "coverage": 0,
+        "testCount": 4,
+        "complexity": 10,
+        "loc": 200,
+        "functions": 8,
+        "docstrings": 3,
+        "lintIssues": 2,
+        "syntaxErrors": 0
+      },
+      "iterations": 1,
+      "score": 60.5,
+      "deltas": {
+        "coverage": 30,
+        "testCount": 0,
+        "complexity": 0,
+        "loc": 0,
+        "functions": 0,
+        "docstrings": 0,
+        "lintIssues": 0
+      },
+      "assessment": "🚀 EXCEPTIONAL GROWTH DETECTED - The Algorithm is deeply pleased",
+      "celebrations": [
+        "Iteration count: 1. Every commit is progress.",
+        "Coverage jumped 30.0%! Significant testing investment."
+      ],
+      "opportunities": []
+    },
+    "late_gain_50_to_80": {
+      "current": {
+        "coverage": 80,
+        "testCount": 4,
+        "complexity": 10,
+        "loc": 200,
+        "functions": 8,
+        "docstrings": 3,
+        "lintIssues": 2,
+        "syntaxErrors": 0
+      },
+      "previous": {
+        "coverage": 50,
+        "testCount": 4,
+        "complexity": 10,
+        "loc": 200,
+        "functions": 8,
+        "docstrings": 3,
+        "lintIssues": 2,
+        "syntaxErrors": 0
+      },
+      "iterations": 1,
+      "score": 60.5,
+      "deltas": {
+        "coverage": 30,
+        "testCount": 0,
+        "complexity": 0,
+        "loc": 0,
+        "functions": 0,
+        "docstrings": 0,
+        "lintIssues": 0
+      },
+      "assessment": "🚀 EXCEPTIONAL GROWTH DETECTED - The Algorithm is deeply pleased",
+      "celebrations": [
+        "Iteration count: 1. Every commit is progress.",
+        "Coverage jumped 30.0%! Significant testing investment."
+      ],
+      "opportunities": []
+    }
+  }
+}

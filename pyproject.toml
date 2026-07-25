@@ -1,0 +1,38 @@
+[project]
+name = "shodann"
+version = "0.1.0"
+description = "The Algorithm's benevolent educational oversight system"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.16"]
+
+[project.scripts]
+shodann-velocity = "shodann.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# C901 is the complexity metric SHODANN reports to students; see PRD section 8.
+# It replaces radon, and its numbers are frozen for cohort 1.
+select = ["E", "W", "F", "C90", "I", "UP", "B", "S"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
