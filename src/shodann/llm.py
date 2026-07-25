@@ -22,7 +22,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 __all__ = ["LLMConfig", "LLMUnavailable", "generate"]
 
@@ -38,7 +38,14 @@ class LLMUnavailable(RuntimeError):
 class LLMConfig:
     base_url: str = ""
     model: str = ""
-    api_key: str = ""
+    api_key: str = field(default="", repr=False)
+    """Kept out of the auto-generated repr.
+
+    Nothing logs this object today, but a live secret in a dataclass is one
+    `logging.debug(config)` or one f-string typo away from a CI log that
+    anyone with read access can see. `describe()` is the safe accessor.
+    """
+
     timeout: int = DEFAULT_TIMEOUT
     max_tokens: int = DEFAULT_MAX_TOKENS
     temperature: float = 0.4

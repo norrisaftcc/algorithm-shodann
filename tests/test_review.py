@@ -202,6 +202,14 @@ def test_the_key_never_appears_in_a_description() -> None:
     assert "super-secret" not in config.describe()
 
 
+def test_the_key_never_appears_in_the_repr_either() -> None:
+    """One logging.debug(config) away from a CI log anyone can read."""
+    config = LLMConfig(base_url="http://x/v1", model="m", api_key="super-secret")
+
+    assert "super-secret" not in repr(config)
+    assert "super-secret" not in f"{config}"
+
+
 def test_a_malformed_response_shape_degrades(tmp_path) -> None:
     def wrong_shape(request, timeout=None):
         return FakeResponse(json.dumps({"unexpected": True}).encode("utf-8"))
