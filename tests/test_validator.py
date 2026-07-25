@@ -112,11 +112,26 @@ def test_the_violation_names_the_replacement() -> None:
 
 @pytest.mark.parametrize(
     "phrase",
-    ["As an AI, I cannot run your tests.", "I'm just a language model, so this is limited."],
+    [
+        "As an AI, I cannot run your tests.",
+        "I'm just a language model, so this is limited.",
+        # Named explicitly at SHODANN_VOICE_GUIDE.md:400 and missed by the
+        # first version of this list.
+        "I don't have feelings, but the coverage delta is encouraging.",
+        # Same phrase with the curly apostrophe a model is likely to emit.
+        "I’m just a language model, so take this lightly.",
+    ],
 )
 def test_character_breaks_are_caught(phrase: str) -> None:
     text = swap(GOOD_STANDARD, "Naming in the inventory module reads clearly.", phrase)
     assert "character_break" in codes(validate(text))
+
+
+def test_smart_apostrophes_do_not_smuggle_forbidden_phrases() -> None:
+    """A curly apostrophe is the cheapest possible bypass of a phrase list."""
+    straight = swap(GOOD_STANDARD, "reads clearly.", "reads clearly. You should refactor it.")
+    curly = straight.replace("'", "’")
+    assert "forbidden_vocabulary" in codes(validate(curly))
 
 
 # --- structure ------------------------------------------------------------
@@ -193,6 +208,21 @@ def test_three_opportunities_block_when_two_are_allowed() -> None:
     assert blocks_posting(violations)
 
 
+@pytest.mark.parametrize("marker", ["-", "*", "+", "1.", "1)"])
+def test_the_cap_counts_every_list_style(marker: str) -> None:
+    """Numbered lists deliver five concepts exactly as well as bullets do.
+
+    prompts/05 uses numbered lists throughout, so the model has every reason
+    to reach for them - and the first version of this check only recognised
+    `-`, `*` and `+`.
+    """
+    items = "\n".join(f"{marker} Item {index}." for index in range(1, 6))
+    text = GOOD_STANDARD.replace(
+        "- The Algorithm suggests extracting the duplicated lookup into a helper.", items
+    )
+    assert "too_many_opportunities" in codes(validate(text))
+
+
 def test_emoji_in_prose_is_advisory_and_the_delta_arrows_are_exempt() -> None:
     assert "emoji_in_prose" not in codes(validate(GOOD_STANDARD))  # contains an up arrow
 
@@ -264,6 +294,36 @@ def test_blue_plus_reports_rather_than_assigning_homework() -> None:
 def test_a_standard_response_fails_the_blue_plus_contract() -> None:
     violations = validate(GOOD_STANDARD, for_clearance(STANDARD, 6))
     assert "missing_section" in codes(violations)
+
+
+def test_blue_plus_may_omit_the_celebration_section() -> None:
+    """CLEARANCE_REGISTER.md:55 permits omitting it "when there is nothing
+    genuine to say". Requiring it would force a peer to manufacture praise for
+    themselves - the condescension the band exists to avoid.
+    """
+    peer = """## \U0001f916 SHODANN Analysis Complete
+
+**Citizen**: @norrisaftcc | **Clearance**: BLUE+ | **Velocity**: 8.0
+
+### \U0001f680 Shipping Velocity Report
+
+Coverage held at 82% while complexity fell four points.
+
+### \U0001f4c8 Growth Opportunities
+
+- Coverage fell while complexity rose in the parser. Deliberate?
+
+### \U0001f50d Observations
+
+The retry path is the only branch without a test.
+"""
+    assert validate(peer, for_clearance(STANDARD, 6)) == []
+
+
+def test_blue_plus_never_widens_a_tighter_budget() -> None:
+    """BLUE+ is "shorter, not longer" - it may only ever reduce a word cap."""
+    assert for_clearance(EMPTY_PR, 6).max_words == EMPTY_PR.max_words == 200
+    assert for_clearance(STANDARD, 6).max_words == 250
 
 
 def test_mid_bands_are_left_alone() -> None:

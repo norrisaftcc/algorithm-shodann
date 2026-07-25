@@ -60,9 +60,16 @@ CHARACTER_BREAKS = (
     "as a language model",
     "i'm just a language model",
     "i am just a language model",
+    "i don't have feelings",
+    "i do not have feelings",
     "i cannot actually",
     "i don't have the ability",
 )
+"""SHODANN *is* The Algorithm's voice; the fiction is the product.
+
+The first three and "I don't have feelings, but..." are named explicitly in
+design_docs/SHODANN_VOICE_GUIDE.md under "Breaking Character".
+"""
 
 DELTA_EMOJI = {"\U0001f4c8", "\U0001f4c9"}
 """The only emoji allowed inside paragraph text."""
@@ -76,7 +83,16 @@ _EMOJI = re.compile(
 _FENCED = re.compile(r"```.*?```", re.DOTALL)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 _HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.MULTILINE)
-_BULLET = re.compile(r"^\s*[-*+]\s+\S", re.MULTILINE)
+
+# Ordered items count too. The concept cap exists to stop a citizen being
+# handed five things at once, and "1." delivers five things exactly as well as
+# "-" does - more so, since prompts/05 uses numbered lists throughout and the
+# model has every reason to copy that style.
+_BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\S", re.MULTILINE)
+
+# Models emit curly apostrophes freely; without this, "I'm just a language
+# model" walks straight past a list written with the straight form.
+_SMART_QUOTES = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'})
 
 
 @dataclass(frozen=True)
@@ -106,6 +122,7 @@ class ResponseSpec:
     optional_headings: tuple[str, ...] = ()
     max_opportunities: int = 2
     opportunities_heading: str = "Growth Opportunities"
+    celebration_heading: str = "Algorithm-Approved Patterns"
     header_field: str = "Velocity"
 
     def with_(self, **changes) -> ResponseSpec:
@@ -212,13 +229,24 @@ def for_clearance(spec: ResponseSpec, clearance_level: int) -> ResponseSpec:
     """
     if clearance_level <= 1:  # INFRARED: one opportunity, one short next step
         return spec.with_(max_opportunities=1)
+
     if clearance_level >= 6:  # BLUE+: reports rather than teaches
         headings = tuple(
             "Observations" if heading == "Recommended Iteration" else heading
             for heading in spec.headings
+            # "the celebration section compresses to a single line or is
+            # omitted when there is nothing genuine to say" - requiring it
+            # would force a peer to manufacture praise for themselves, which
+            # is the condescension the band exists to avoid.
+            if heading != spec.celebration_heading
         )
         return spec.with_(
-            max_words=250, min_words=0, headings=headings, max_opportunities=1
+            # min(), not 250: a mode with a tighter budget keeps it. BLUE+ is
+            # "shorter, not longer", so this may only ever reduce the cap.
+            max_words=min(spec.max_words, 250),
+            headings=headings,
+            optional_headings=(*spec.optional_headings, spec.celebration_heading),
+            max_opportunities=1,
         )
     return spec
 
@@ -227,8 +255,13 @@ def for_clearance(spec: ResponseSpec, clearance_level: int) -> ResponseSpec:
 
 
 def _prose(text: str) -> str:
-    """Strip code so the vocabulary rules only judge SHODANN's own voice."""
-    return _INLINE_CODE.sub(" ", _FENCED.sub(" ", text))
+    """Strip code so the vocabulary rules only judge SHODANN's own voice.
+
+    Also folds smart punctuation, so a curly apostrophe cannot smuggle a
+    forbidden phrase past a list written with straight ones.
+    """
+    stripped = _INLINE_CODE.sub(" ", _FENCED.sub(" ", text))
+    return stripped.translate(_SMART_QUOTES)
 
 
 def _headings(text: str) -> list[str]:
