@@ -56,6 +56,7 @@ TEMPLATE_BEGIN = "<!-- TEMPLATE:BEGIN -->"
 TEMPLATE_END = "<!-- TEMPLATE:END -->"
 
 EMOJI = {
+    # Standard response contract
     "ROBOT EMOJI": "\U0001f916",
     "ROCKET EMOJI": "\U0001f680",
     "CHECK EMOJI": "✅",
@@ -64,14 +65,50 @@ EMOJI = {
     "LOCK EMOJI": "\U0001f512",
     "UPWARD CHART EMOJI": "\U0001f4c8",
     "DOWNWARD CHART EMOJI": "\U0001f4c9",
+    # RAGE STATE (prompts/02)
+    "SIREN EMOJI": "\U0001f6a8",
+    "WARNING EMOJI": "⚠️",
+    "SHIELD EMOJI": "\U0001f6e1️",
+    "EYES EMOJI": "\U0001f440",
+    "DICE EMOJI": "\U0001f3b2",
+    "TARGET EMOJI": "\U0001f3af",
+    "CLIPBOARD EMOJI": "\U0001f4cb",
+    # First submission (prompts/04)
+    "SPARKLE EMOJI": "✨",
+    "STAR EMOJI": "⭐",
+    "COMPASS EMOJI": "\U0001f9ed",
+    "TEST TUBE EMOJI": "\U0001f9ea",
+    "X EMOJI": "❌",
+    # Edge case handlers (prompts/05)
+    "HOURGLASS EMOJI": "⏳",
+    "QUESTION EMOJI": "❓",
+    "WHALE EMOJI": "\U0001f433",
+    "LIGHTBULB EMOJI": "\U0001f4a1",
+    "CONSTRUCTION EMOJI": "\U0001f6a7",
+    "MAGNIFYING GLASS EMOJI": "\U0001f50d",
+    "DOCUMENT EMOJI": "\U0001f4c4",
+    "INFO EMOJI": "ℹ️",
 }
+"""Bracketed names the templates use where the output contract wants an emoji.
+
+An unmapped name passes through untouched and lands in a student's section
+heading as literal bracket text. `test_prompts.py` asserts every bracketed name
+across the whole library has an entry here, including templates that are not
+rendered yet - the failure only appears the day one of them is wired up, which
+is exactly when nobody is looking for it.
+"""
 
 _EMOJI_PATTERN = re.compile(r"\[([A-Z ]+EMOJI)\]")
 _HTML_COMMENT = re.compile(r"[ \t]*<!--.*?-->[ \t]*\n?", re.DOTALL)
 
 # {{ IF x }}, {{ ELSE }}, {{ ENDIF }}, {{ END IF }}, {{ FOR EACH x IN y }},
-# {{ END FOR }}, {{ EXAMPLE }}, {{ END EXAMPLES }} - none of it is Jinja.
-_PSEUDO_SYNTAX = re.compile(r"\{\{\s*(IF|ELSE|ENDIF|END\s+\w+|FOR\s+EACH|EXAMPLE)\b[^}]*\}\}")
+# {{ END FOR }}, {{ EXAMPLE }}, {{ EXAMPLES }}, {{ END EXAMPLES }} - none of it
+# is Jinja. The plural matters: `EXAMPLE\b` does not match `{{ EXAMPLES }}`,
+# and an undetected authoring placeholder is worse than an undetected keyword -
+# it parses as a perfectly valid variable lookup and only fails at render time,
+# looking like an ordinary missing binding rather than syntax that was never
+# meant to be data.
+_PSEUDO_SYNTAX = re.compile(r"\{\{\s*(IF|ELSE|ENDIF|END\s+\w+|FOR\s+EACH|EXAMPLES?)\b[^}]*\}\}")
 
 
 class UnsupportedTemplateSyntax(ValueError):
