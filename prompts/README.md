@@ -22,6 +22,7 @@ enforces the growth-positive vocabulary mandated by The Algorithm.
 | `03_clearance_variations.md` | Level-specific guidance | Based on citizen clearance |
 | `04_first_submission_prompt.md` | Onboarding mode | First PR from citizen |
 | `05_edge_case_handlers.md` | Unusual submissions | Empty, failing, massive PRs |
+| `06_assembled_example.md` | Worked end-to-end example | Reference only, never rendered |
 
 ---
 
@@ -186,22 +187,41 @@ EDGE_CASE_HANDLER: enum of handler type
 
 ## Testing Prompts Locally
 
-To test prompt construction without running the full workflow:
+Rendering is done by `shodann.prompts`, offline, with no API key:
 
 ```bash
-# Create test variables
-export CITIZEN_USERNAME="test_citizen"
-export CLEARANCE_NAME="RED"
-export CURRENT_COVERAGE="45"
-export PREV_COVERAGE="30"
-# ... etc
-
-# Use envsubst or similar to inject variables
-envsubst < 01_base_shodann_prompt.md > test_prompt.txt
-
-# Send to Gemini API for testing
-# (requires GEMINI_API_KEY)
+python -c "from shodann.prompts import render_prompt, build_context; print(render_prompt(...))"
 ```
+
+See `tests/test_prompts.py` for a worked context. The test suite renders the
+base template on every run and asserts nothing is left unresolved.
+
+### Why not envsubst
+
+An earlier version of this file suggested `envsubst < 01_base_shodann_prompt.md`.
+That cannot work, for three separate reasons, and it is worth knowing all three
+before reaching for a simpler tool:
+
+1. **`envsubst` expands `$VAR`, not `{{ VAR }}`.** It would substitute nothing
+   at all and emit the template unchanged.
+2. **These files are documents, not templates.** The prompt lives inside a
+   fenced block, and the same file carries a variable-reference table that
+   mentions every placeholder as documentation. Whole-file substitution would
+   rewrite the documentation too. The renderable region is delimited by
+   `<!-- TEMPLATE:BEGIN -->` / `<!-- TEMPLATE:END -->` markers.
+3. **Templates `02`, `04` and `05` contain control flow** — `{{ IF X }}`,
+   `{{ FOR EACH x IN y }}`, `{{ TESTS_PASSED + TESTS_FAILED }}` — which no
+   substitution tool can interpret. They need converting to real Jinja
+   (`{% if X %}`, `{% for x in y %}`) before they can be rendered at all. The
+   renderer detects the ad-hoc syntax and reports the file and line rather than
+   failing with a parser trace.
+
+### Markers are required
+
+A template with no `TEMPLATE:BEGIN` / `TEMPLATE:END` pair raises rather than
+guessing, because guessing means sending a variable-reference table to the
+model. Only `01` carries markers today; the rest are added as each template
+comes into scope.
 
 ---
 
