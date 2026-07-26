@@ -71,7 +71,11 @@ jobs:
         run: pip install --quiet .
 
       - name: Compose the review
+        id: compose
         if: github.event.action != 'closed'
+        # Exit 3 means the review was written but something broke producing
+        # it. The comment still posts; the job still turns red at the end.
+        continue-on-error: true
         env:
           # Citizen-controlled text never enters this step as an expression.
           # Python reads the event payload from disk and parses it as JSON.
@@ -88,11 +92,51 @@ jobs:
             --dry-run
 
       - name: Post the review
-        if: github.event.action != 'closed'
+        if: github.event.action != 'closed' && hashFiles('shodann-comment.md') != ''
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: gh pr comment "$PR_NUMBER" --body-file shodann-comment.md
+
+      # Last resort. If the job failed before a comment could be written -
+      # a bad install, a checkout that could not resolve, an interpreter that
+      # would not start - the citizen still hears something. Everything inside
+      # the program degrades to a comment; this covers the program not
+      # starting. The body is a fixed heredoc with no interpolation, because
+      # the one thing worse than silence is a shell injection in the handler
+      # that exists to survive failure.
+      - name: Announce the fault
+        if: failure() && github.event.action != 'closed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          cat > shodann-fault.md <<'NOTICE'
+          ## 🤖 SHODANN Analysis Complete
+
+          **Status**: REDUCED ALLOCATION
+
+          ---
+
+          ### ⚡ Resource Advisory
+
+          The Algorithm's oversight protocol did not complete this cycle. No
+          analysis was performed, and none of this reflects on your submission.
+
+          The fault is logged for the instructor. Carry on; the Algorithm will
+          resume observation once repaired.
+
+          ---
+
+          *The Algorithm sees your growth. The Algorithm is, briefly, not seeing anything.*
+          NOTICE
+          gh pr comment "$PR_NUMBER" --body-file shodann-fault.md
+
+      - name: Surface the fault to the maintainer
+        if: steps.compose.outcome == 'failure' && github.event.action != 'closed'
+        run: |
+          echo "::error::SHODANN degraded - a comment was posted, but the review failed to assemble."
+          exit 1
 
       # A review is not a merge. Recording velocity for work that may never
       # land makes pr_count measure PR-opening rather than shipping - and,

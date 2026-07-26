@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import traceback
 from pathlib import Path
 
 from .capability import FULL, Capabilities, refusal_reason
@@ -39,7 +40,22 @@ from .validator import (
 )
 from .velocity import CodeMetrics, VelocityResult, calculate_velocity
 
-__all__ = ["collect_metrics", "main", "pr_facts", "reduced_allocation_comment", "review"]
+__all__ = [
+    "EXIT_DEGRADED",
+    "collect_metrics",
+    "emergency_comment",
+    "main",
+    "pr_facts",
+    "reduced_allocation_comment",
+    "review",
+]
+
+EXIT_DEGRADED = 3
+"""The review was written but something broke producing it.
+
+Distinct from 0 so CI can post the comment and still turn red: a citizen
+is served either way, and a maintainer is not told everything is fine.
+"""
 
 EXCLUDED_DIRS = frozenset(
     {
@@ -162,6 +178,52 @@ commit(s), touching {facts["files_changed"]} file(s). Velocity: {result.score}.
 
 class _AlreadyResolved(Exception):
     """The review was settled before a model was needed."""
+
+
+def _safe_citizen(event_path: str) -> str:
+    """The citizen's name, if the payload can still be read. Never raises."""
+    try:
+        with Path(event_path).open(encoding="utf-8") as handle:
+            return pr_facts(json.load(handle))["citizen"]
+    except Exception:  # noqa: BLE001 - this runs *because* something already broke
+        return "citizen"
+
+
+def emergency_comment(citizen: str) -> str:
+    """What a citizen gets when the review itself could not be assembled.
+
+    No metrics, because whatever produced them is what failed. It still wears
+    the REDUCED ALLOCATION status, because that mode means exactly this: the
+    readings are absent and the Algorithm is saying so rather than going
+    quiet. Silence is the one response a citizen cannot interpret.
+    """
+    return f"""## \U0001f916 SHODANN Analysis Complete
+
+**Citizen**: @{citizen} | **Clearance**: PENDING | **Status**: REDUCED ALLOCATION
+
+---
+
+### ⚡ Resource Advisory
+
+The Algorithm reviewed this submission using minimal resources. Extremely
+minimal. None, in fact - an internal fault prevented analysis entirely, and
+the Algorithm has elected to tell you so rather than leave you refreshing.
+
+Your submission is unaffected. Nothing here reflects on your work, because
+nothing here read your work. The fault is logged for the instructor.
+
+### \U0001f4ca Instrument Readings
+
+Unavailable this cycle.
+
+### \U0001f4c8 Growth Opportunities
+
+- Carry on. The Algorithm will resume observation once repaired.
+
+---
+
+*The Algorithm sees your growth. The Algorithm is, briefly, not seeing anything.*
+"""
 
 
 def _spec_for(record: CitizenRecord, mode: str) -> ResponseSpec:
@@ -288,15 +350,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    with Path(args.event).open(encoding="utf-8") as handle:
-        event = json.load(handle)
+    try:
+        with Path(args.event).open(encoding="utf-8") as handle:
+            event = json.load(handle)
+        body = review(event, root=args.root, mode=args.mode, write_state=not args.dry_run)
+        exit_code = 0
+    except Exception:  # noqa: BLE001 - the last thing between a defect and silence
+        # Everything inside the review degrades to a comment. A defect in the
+        # program itself used to produce nothing at all, and a citizen cannot
+        # tell "still running" from "crashed twenty minutes ago". They get the
+        # notice; the maintainer gets the traceback and a red run.
+        traceback.print_exc()
+        body = emergency_comment(_safe_citizen(args.event))
+        exit_code = EXIT_DEGRADED
 
-    body = review(event, root=args.root, mode=args.mode, write_state=not args.dry_run)
     Path(args.out).write_text(body, encoding="utf-8")
 
     # Never echo the body: it contains citizen-authored text via the PR title.
     sys.stderr.write(f"SHODANN wrote {len(body.split())} words to {args.out}\n")
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":  # pragma: no cover
