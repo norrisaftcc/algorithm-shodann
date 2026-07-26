@@ -188,8 +188,8 @@ Current Clearance: {{ CLEARANCE_NAME }}
 
 ## Concept Limits
 
-- Address at MOST 2 growth opportunities
-- Provide exactly 1 recommended next iteration
+- Address at MOST {{ MAX_OPPORTUNITIES }} growth opportunities
+- {{ ITERATION_LIMIT }}
 - Keep explanations brief - one concept, one example, move on
 - Match complexity of suggestions to clearance level
 
@@ -226,10 +226,9 @@ returning citizen, reference improvement from previous submissions.]
 problems. Match complexity to clearance level. Include brief code example
 only if helpful and appropriate to clearance.]
 
-### [WRENCH EMOJI] Recommended Iteration
+### {{ ITERATION_MARK }} {{ ITERATION_HEADING }}
 
-[ONE specific, actionable thing they can do in their next commit. Make it
-achievable within 30 minutes of work. Frame as "level up" not "fix this".]
+{{ ITERATION_GUIDANCE }}
 
 {{ RAGE_SECTION_IF_ACTIVE }}
 
@@ -240,7 +239,7 @@ achievable within 30 minutes of work. Frame as "level up" not "fix this".]
 
 ## Word Limit
 
-**CRITICAL**: Keep total response under 400 words. Every word must earn its
+**CRITICAL**: Keep total response under {{ WORD_CAP }} words. Every word must earn its
 place. Be specific, not generic. Every piece of feedback must reference
 something concrete from this citizen's submission.
 
@@ -251,7 +250,7 @@ Use these emojis for section headers ONLY:
 - [ROCKET EMOJI] = Velocity report
 - [CHECK EMOJI] = Approved patterns
 - [CHART EMOJI] = Growth opportunities
-- [WRENCH EMOJI] = Recommended iteration
+- [WRENCH EMOJI] = Recommended iteration (or [MAGNIFYING GLASS EMOJI] for Observations at BLUE+)
 - [LOCK EMOJI] = Security observations (RAGE STATE only)
 
 Do NOT use emojis within paragraph text except for:
