@@ -97,6 +97,17 @@ class CitizenRecord:
     velocity_history: list[dict] = field(default_factory=list)
     last_degradation: str | None = None
     """Why the most recent review went out uninterpreted, or None."""
+    coverage_instrumented: bool = False
+    """Whether ``last_metrics.coverage`` was measured or is a stand-in zero.
+
+    ``CodeMetrics.coverage`` cannot hold this: it is a float feeding an
+    arithmetic engine, and 0.0 there means both *no lines covered* and *nobody
+    looked*. Those two need to stay apart in the ledger, because the next
+    review subtracts from this number and would otherwise announce a 98-point
+    gain to a citizen whose coverage did not move - it was simply measured for
+    the first time. Defaults False, so ledgers written before coverage
+    instrumentation existed are correctly read as unmeasured.
+    """
 
     # -- serialisation -----------------------------------------------------
 
@@ -123,6 +134,7 @@ class CitizenRecord:
             velocity_trend=data.get("velocity_trend", TREND_NEW),
             velocity_history=list(data.get("velocity_history", [])),
             last_degradation=data.get("last_degradation"),
+            coverage_instrumented=bool(data.get("coverage_instrumented", False)),
         )
 
     def to_dict(self) -> dict:
@@ -142,6 +154,7 @@ class CitizenRecord:
             "velocity_trend": self.velocity_trend,
             "velocity_history": list(self.velocity_history),
             "last_degradation": self.last_degradation,
+            "coverage_instrumented": self.coverage_instrumented,
         }
 
 
@@ -197,6 +210,7 @@ def save_citizen_history(
     config: VelocityConfig = DEFAULT_CONFIG,
     now: str | None = None,
     degradation: str | None = None,
+    coverage_instrumented: bool = False,
 ) -> CitizenRecord:
     """Fold one submission into the citizen's ledger and write it atomically.
 
@@ -208,6 +222,9 @@ def save_citizen_history(
 
     record.pr_count += 1
     record.last_metrics = metrics
+    # Recorded beside the metrics it qualifies. A run whose analysis job died
+    # must not leave last cycle's measured reading looking current.
+    record.coverage_instrumented = coverage_instrumented
     record.last_velocity = result.score
     record.last_updated = timestamp
     record.baseline_established = True

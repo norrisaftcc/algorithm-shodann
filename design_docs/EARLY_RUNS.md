@@ -155,9 +155,41 @@ Three reasons this file exists:
 
 ---
 
+## 8. The workflow was the one file no test could read
+
+**Where:** the first merge with coverage instrumentation. The ledger recorded `coverage: 0.0` after a run whose analysis job measured 98.6% and uploaded it.
+
+**The wrong diagnosis, and it was mine:** the analysis job was skipped on the `closed` event, so the merge that wrote the ledger had no readings to write. That was true, it was fixed, and the symptom survived it. Asserting a cause and merging a fix is not the same as confirming one.
+
+**The actual cause:** `--reports` was never passed to the CLI. A string replacement in the edit script that added the flag had failed silently, so the workflow uploaded the artifact, downloaded the artifact, and then invoked a review that had no idea it existed. Two green pipelines, correct artifact handoff, readings discarded at the last step.
+
+**The pattern this completes:** the third defect of the same shape, after a `--dry-run` flag added to the wrong entry point and a checkout asking for a branch that merge had deleted. All three were contracts *between the workflow and the program*, and the workflow was the only code in the repository no test could see.
+
+**What changed:** `tests/test_workflow_contract.py` reads the workflow as text and asserts crudely — both invocations pass `--reports`, the review still passes `--dry-run`, `analyse` declares `contents: read` and names no secret, `review` invokes neither `pytest` nor `ruff`, and no citizen-authored field reaches a shell. Those last two were previously guaranteed by a comment explaining the intent. A YAML-aware version would have been more elegant and would have caught none of this: the failure was a missing string in a `run:` block.
+
+---
+
+## 9. The comment contradicted itself about coverage
+
+**Where:** rendering the degraded review by hand, after the ledger finally held a real coverage figure. The tests were green.
+
+**What it said**, in one comment, three sections apart: *"Your previous submission was not measured, so this one starts the comparison"* under Instrument Readings, and *"Coverage jumped 98.6%! Significant testing investment"* under Algorithm-Approved Patterns. Also *"First tests are hardest tests"* — to a citizen who may have had 98.6% coverage all along.
+
+**Why:** `collect_metrics` has to hand the velocity engine a float, so an absent reading arrives as `0.0`. The engine cannot tell that zero from a measured one. The readout had just learned the difference; nothing downstream had. So the display refused to claim a gain while the score, the celebrations, and the opportunities all claimed it loudly.
+
+The same defect ran the other way and was worse: a citizen at 91.2% whose analysis job died scored **−405**, a 182-point punishment for a tool crashing. A punitive branch caused by infrastructure, which the behavioural contract forbids outright.
+
+**What changed:** `reconcile_coverage` holds coverage still unless *both* sides of the comparison were measured, and the ledger gained a `coverage_instrumented` flag so "nobody looked" and "no lines covered" stop sharing a representation. A measured zero is untouched — 0 to 30 is US-1.3's flagship case and must keep scoring as the gain it is.
+
+**How it was found:** by printing all seven branches and reading them. The assertion that would have caught it did not exist, because it never occurred to me that two sections of the same comment could disagree.
+
+---
+
 ## What the pattern says
 
-Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had.
+Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
+
+Two of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that caught a comment disagreeing with itself.
 
 The two agents caught different things and neither caught these: `oracle-warden` verifies what is checkable mechanically, `clive-prompt-warden` verifies what is consistent across documents. Neither can see what only appears when a real event payload meets a real runner.
 
