@@ -281,12 +281,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True, help="where to write the comment body")
     parser.add_argument("--root", default=".")
     parser.add_argument("--mode", default="standard", choices=sorted(SPECS))
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="compose the review without writing the citizen ledger",
+    )
     args = parser.parse_args(argv)
 
     with Path(args.event).open(encoding="utf-8") as handle:
         event = json.load(handle)
 
-    body = review(event, root=args.root, mode=args.mode)
+    body = review(event, root=args.root, mode=args.mode, write_state=not args.dry_run)
     Path(args.out).write_text(body, encoding="utf-8")
 
     # Never echo the body: it contains citizen-authored text via the PR title.

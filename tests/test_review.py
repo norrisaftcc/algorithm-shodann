@@ -310,6 +310,25 @@ def test_config_reads_the_environment() -> None:
 # --- cli ------------------------------------------------------------------
 
 
+def test_cli_dry_run_writes_no_ledger(tmp_path) -> None:
+    """The flag the workflow passes on every review.
+
+    It was added to cli.py and not to this entry point, so the first live run
+    after the change died on `unrecognized arguments: --dry-run`.
+    """
+    event_file = tmp_path / "event.json"
+    event_file.write_text(json.dumps(EVENT), encoding="utf-8")
+    out = tmp_path / "comment.md"
+
+    code = main(
+        ["--event", str(event_file), "--out", str(out), "--root", str(tmp_path), "--dry-run"]
+    )
+
+    assert code == 0
+    assert out.read_text(encoding="utf-8"), "the review is still composed"
+    assert not citizen_path("octocat", tmp_path).exists(), "and no state was written"
+
+
 def test_cli_writes_the_body_to_a_file_and_not_to_stdout(tmp_path, capsys) -> None:
     """The body carries a citizen-authored title; it must not be echoed into a log."""
     event_file = tmp_path / "event.json"
