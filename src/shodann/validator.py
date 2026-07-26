@@ -206,6 +206,31 @@ CONFIG_ONLY = ResponseSpec(
     opportunities_heading="Algorithm Observations",
 )
 
+REDUCED_ALLOCATION = ResponseSpec(
+    name="reduced_allocation",
+    max_words=250,
+    headings=(
+        "Resource Advisory",
+        "Instrument Readings",
+        "Algorithm-Approved Patterns",
+        "Growth Opportunities",
+    ),
+    max_opportunities=2,
+    header_field="Status",
+)
+"""The Algorithm reviewed you cheaply and would like credit for it.
+
+Entered when synthesis is unavailable, when the configured model does not
+serve this citizen's band, or when a response failed the contract twice. The
+readings in it are as good as any other review's - they come from tools - but
+nothing has interpreted them, and the mode says so out loud rather than
+burying it in a footnote.
+
+A system that knows its own limits announces them. That is the lesson the mode
+exists to teach, and it only teaches it if the announcement is as visible as
+the findings.
+"""
+
 SPECS = {
     spec.name: spec
     for spec in (
@@ -216,6 +241,7 @@ SPECS = {
         MASSIVE_PR,
         SYNTAX_BARRIER,
         CONFIG_ONLY,
+        REDUCED_ALLOCATION,
     )
 }
 

@@ -95,6 +95,8 @@ class CitizenRecord:
     last_velocity: float = 0.0
     velocity_trend: str = TREND_NEW
     velocity_history: list[dict] = field(default_factory=list)
+    last_degradation: str | None = None
+    """Why the most recent review went out uninterpreted, or None."""
 
     # -- serialisation -----------------------------------------------------
 
@@ -120,6 +122,7 @@ class CitizenRecord:
             last_velocity=data.get("last_velocity", 0.0),
             velocity_trend=data.get("velocity_trend", TREND_NEW),
             velocity_history=list(data.get("velocity_history", [])),
+            last_degradation=data.get("last_degradation"),
         )
 
     def to_dict(self) -> dict:
@@ -138,6 +141,7 @@ class CitizenRecord:
             "last_velocity": self.last_velocity,
             "velocity_trend": self.velocity_trend,
             "velocity_history": list(self.velocity_history),
+            "last_degradation": self.last_degradation,
         }
 
 
@@ -192,6 +196,7 @@ def save_citizen_history(
     *,
     config: VelocityConfig = DEFAULT_CONFIG,
     now: str | None = None,
+    degradation: str | None = None,
 ) -> CitizenRecord:
     """Fold one submission into the citizen's ledger and write it atomically.
 
@@ -206,6 +211,9 @@ def save_citizen_history(
     record.last_velocity = result.score
     record.last_updated = timestamp
     record.baseline_established = True
+    # Recorded whether or not it happened, so a cleared degradation does
+    # not leave last cycle's reason looking current.
+    record.last_degradation = degradation
     if record.first_submission is None:
         record.first_submission = timestamp
 
