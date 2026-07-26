@@ -178,6 +178,7 @@ jobs:
             --event "$GITHUB_EVENT_PATH" \
             --out shodann-comment.md \
             --root . \
+            --reports shodann-reports \
             --dry-run
 
       - name: Post the review
@@ -241,7 +242,8 @@ jobs:
           python -m shodann.review \
             --event "$GITHUB_EVENT_PATH" \
             --out /tmp/shodann-record.md \
-            --root .
+            --root . \
+            --reports shodann-reports
           if [ -z "$(git status --porcelain .shodann)" ]; then
             echo "No ledger change to record."
             exit 0
