@@ -23,10 +23,11 @@ name: SHODANN Educational Oversight Protocol
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # A review runs on every push. It never writes state - see below.
+    types: [opened, synchronize, reopened, closed]
 
 permissions:
-  contents: write        # persist the citizen ledger
+  contents: write        # persist the citizen ledger, on merge only
   pull-requests: write   # post the review comment
 
 concurrency:
@@ -63,6 +64,7 @@ jobs:
         run: pip install --quiet .
 
       - name: Compose the review
+        if: github.event.action != 'closed'
         env:
           # Citizen-controlled text never enters this step as an expression.
           # Python reads the event payload from disk and parses it as JSON.
@@ -70,23 +72,37 @@ jobs:
           SHODANN_LLM_MODEL: ${{ vars.SHODANN_LLM_MODEL }}
           SHODANN_LLM_API_KEY: ${{ secrets.SHODANN_LLM_API_KEY }}
         run: |
+          # --dry-run: a review never writes state. Persistence happens on
+          # merge, in the step below.
           python -m shodann.review \
             --event "$GITHUB_EVENT_PATH" \
             --out shodann-comment.md \
-            --root .
+            --root . \
+            --dry-run
 
       - name: Post the review
+        if: github.event.action != 'closed'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: gh pr comment "$PR_NUMBER" --body-file shodann-comment.md
 
+      # A review is not a merge. Recording velocity for work that may never
+      # land makes pr_count measure PR-opening rather than shipping - and,
+      # found the hard way, writing the ledger to every PR branch means two
+      # open pull requests produce two divergent ledgers and the second merge
+      # always conflicts. SHODANN spent an afternoon blocking its own PRs.
       - name: Record the citizen ledger
+        if: github.event.action == 'closed' && github.event.pull_request.merged == true
         env:
           CITIZEN: ${{ github.event.pull_request.user.login }}
         run: |
-          # $CITIZEN is a GitHub username: [A-Za-z0-9-] only, and quoted here
-          # regardless. It is used in a commit message, never in a path.
+          git fetch origin "${GITHUB_BASE_REF}"
+          git checkout "${GITHUB_BASE_REF}"
+          python -m shodann.review \
+            --event "$GITHUB_EVENT_PATH" \
+            --out /tmp/shodann-record.md \
+            --root .
           if [ -z "$(git status --porcelain .shodann)" ]; then
             echo "No ledger change to record."
             exit 0
@@ -95,4 +111,4 @@ jobs:
           git config user.email "shodann[bot]@users.noreply.github.com"
           git add .shodann
           git commit -m "Record velocity for @${CITIZEN}"
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
+          git push origin "HEAD:${GITHUB_BASE_REF}"

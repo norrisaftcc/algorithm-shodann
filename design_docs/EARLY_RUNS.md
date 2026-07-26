@@ -137,6 +137,24 @@ Three reasons this file exists:
 
 ---
 
+## 7. SHODANN blocked its own pull requests
+
+**Where:** merging four PRs in a row. The first went in; the second and third reported conflicts; the fourth needed three attempts and lost a race twice.
+
+**What conflicted:** exactly one file, every time - `.shodann/citizens/norrisaftcc.json`. SHODANN's own ledger.
+
+**Why:** the review job wrote the ledger to the *pull request branch* on every run. Two open PRs meant two divergent ledgers, and the second merge conflicted by construction. Worse, each push triggered a fresh review, which pushed a fresh ledger commit, which invalidated the merge that was about to happen - a loop that resolves only by winning a race against your own bot.
+
+`PRD.md` section 8 anticipated half of this: *"per-citizen files reduce merge conflicts"*. True across citizens, useless for one citizen with two branches. In a classroom each student has their own repository, so student-versus-student never collides - but any student with two open pull requests hits this on their second merge, and has no idea why.
+
+**The deeper problem the conflict exposed:** a review is not a merge. Recording velocity for work that may never land makes `pr_count` measure pull-request-*opening* rather than shipping, and a citizen who opens and closes five PRs accrues five submissions for nothing.
+
+**What changed:** the review runs on every push and writes no state at all (`--dry-run`). The ledger is written once, on `pull_request: closed` with `merged == true`, against the base branch. Velocity now records what landed.
+
+**What this cost before it was found:** four merges, two conflict resolutions, one lost race, and roughly twenty minutes of a maintainer fighting a bot for control of a JSON file.
+
+---
+
 ## What the pattern says
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had.
