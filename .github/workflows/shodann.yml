@@ -52,7 +52,14 @@ jobs:
           # push below sent that merge commit to the citizen's branch on every
           # run. Checking out the real branch tip means the push carries the
           # ledger commit and nothing else.
-          ref: ${{ github.event.pull_request.head.ref }}
+          # On a merge the head branch is usually already deleted, so the
+          # closed-event run checks out the base instead - which is also where
+          # the ledger belongs. Asking for a deleted branch fails the whole
+          # job before any step can decide it did not need it.
+          ref: >-
+            ${{ github.event.action == 'closed'
+                && github.event.pull_request.base.ref
+                || github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -97,8 +104,7 @@ jobs:
         env:
           CITIZEN: ${{ github.event.pull_request.user.login }}
         run: |
-          git fetch origin "${GITHUB_BASE_REF}"
-          git checkout "${GITHUB_BASE_REF}"
+          # Already on the base branch: the checkout step selected it.
           python -m shodann.review \
             --event "$GITHUB_EVENT_PATH" \
             --out /tmp/shodann-record.md \
