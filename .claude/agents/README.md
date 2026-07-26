@@ -8,6 +8,7 @@ Two kinds of file live here, and mixing them up will waste your time.
 |---|---|---|
 | `citizen-zero` | The reader. Takes one review as a beginner would - with no repository access at all - and reports what they understood, what they would do next, and what they were left believing. Testimony, not critique. | The first REDUCED ALLOCATION review a citizen would receive. Reported "What I would do next: I don't have one", and caught a contradiction no checker could: the review promised readings "measured, not interpreted" and then opened with "The Algorithm is deeply pleased". Both fixed in the same PR. |
 | `oracle-warden` | Mechanical gate. Runs the frozen toolchain, verifies oracle fixtures and engine guards are intact, reports pass/fail tables with evidence. Never repairs. | The velocity engine port (`c98c497`). Returned `GATE FAIL` on its first run and was right: `pyproject.toml` declared `ruff>=0.16`, an open bound, while `PRD.md` and `CLAUDE.md` both promised a pin. A routine reinstall would have moved the `C901` numbers that feed the velocity score. Fixed in the same PR that added the agent. |
+| `clive-prompt-warden` | Cross-document consistency. Reads every file and checks that what one claims, another has. Reports; never repairs. | Prompt assembly. Caught `_PSEUDO_SYNTAX` failing to match `{{ EXAMPLES }}`, and 20 emoji names present in the templates with no entry in the map — both silent, both would have reached a citizen. |
 
 ## Inherited from CSC-134 (unmaintained, do not run as-is)
 
