@@ -51,7 +51,14 @@ jobs:
   # =========================================================================
   analyse:
     name: Hard analysis
-    if: github.event.action != 'closed'
+    # Runs on merge too. The ledger is the durable baseline every later delta
+    # is measured from, and a record written without coverage means coverage
+    # can never move - the first merge under #47 recorded 0.0 and would have
+    # kept every future delta at zero. Measuring at merge is also the more
+    # honest reading: the record should describe what landed, not what the
+    # head looked like before it did. Skipped only for a pull request that
+    # closed without merging, where there is nothing to record.
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -61,7 +68,13 @@ jobs:
       - name: Check out the submission
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          # Base on merge, head otherwise - the same rule the review job
+          # follows, and for the same reason: the head branch is usually
+          # already deleted by the time the closed event arrives.
+          ref: >-
+            ${{ github.event.action == 'closed'
+                && github.event.pull_request.base.ref
+                || github.event.pull_request.head.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -138,7 +151,8 @@ jobs:
         run: pip install --quiet .
 
       - name: Collect the readings
-        if: github.event.action != 'closed'
+        # On merge too: the ledger written below is the baseline the next
+        # submission is measured against.
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
