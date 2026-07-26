@@ -9,7 +9,15 @@ import pytest
 
 from shodann.capability import LOCAL_SMALL
 from shodann.llm import LLMConfig, LLMUnavailable, generate
-from shodann.review import collect_metrics, main, pr_facts, review
+from shodann.review import (
+    EXIT_DEGRADED,
+    _safe_citizen,
+    collect_metrics,
+    emergency_comment,
+    main,
+    pr_facts,
+    review,
+)
 from shodann.state import CitizenRecord, citizen_path, load_citizen_history
 from shodann.validator import REDUCED_ALLOCATION, STANDARD, blocks_posting, validate
 
@@ -354,6 +362,34 @@ def test_config_reads_the_environment() -> None:
 
 
 # --- cli ------------------------------------------------------------------
+
+
+def test_a_broken_review_still_speaks(tmp_path, capsys) -> None:
+    """Everything inside the review degrades to a comment. This covers the
+    program itself breaking - which used to produce nothing at all, and a
+    citizen cannot tell "still running" from "crashed twenty minutes ago".
+    """
+    event_file = tmp_path / "event.json"
+    event_file.write_text("{ not json", encoding="utf-8")
+    out = tmp_path / "comment.md"
+
+    code = main(["--event", str(event_file), "--out", str(out), "--root", str(tmp_path)])
+    body = out.read_text(encoding="utf-8")
+
+    assert code == EXIT_DEGRADED, "a citizen is served, and CI still turns red"
+    assert "REDUCED ALLOCATION" in body
+    assert "nothing here read your work" in body
+    assert "Traceback" in capsys.readouterr().err, "the maintainer gets the cause"
+
+
+def test_the_emergency_comment_names_the_citizen_when_it_can(tmp_path) -> None:
+    event_file = tmp_path / "event.json"
+    event_file.write_text(json.dumps(EVENT), encoding="utf-8")
+    assert "@octocat" in emergency_comment(_safe_citizen(str(event_file)))
+
+
+def test_it_degrades_rather_than_raising_when_even_the_name_is_gone() -> None:
+    assert "@citizen" in emergency_comment(_safe_citizen("does-not-exist.json"))
 
 
 def test_cli_dry_run_writes_no_ledger(tmp_path) -> None:
