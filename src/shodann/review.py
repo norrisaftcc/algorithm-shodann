@@ -121,8 +121,12 @@ def reduced_allocation_comment(
     you don't know", the saying has to be as visible as the knowing.
     """
     celebrations = "\n".join(f"- {line}" for line in result.celebrations[:3])
+    # Citizen Zero, reading this cold: "a review that leaves you with nothing
+    # to do has failed." An empty section is not neutral - it is a dead end.
     opportunities = "\n".join(f"- {line}" for line in result.opportunities) or (
-        "- The Algorithm has no growth opportunities to raise this iteration."
+        "- Nothing in these readings raised one. If you want a next step anyway: "
+        "run your tests locally before your next push, so you see a failure "
+        "before The Algorithm does."
     )
 
     return f"""## \U0001f916 SHODANN Analysis Complete
@@ -143,8 +147,11 @@ is yours. Please verify anything that matters.
 
 ### \U0001f4ca Instrument Readings
 
-{result.assessment}. Submission {record.pr_count} across {result.iterations} \
-commit(s), touching {facts["files_changed"]} file(s). Velocity: {result.score}.
+Submission {record.pr_count}. {result.iterations} commit(s), \
+{facts["files_changed"]} file(s) touched. Velocity score: {result.score}.
+
+Velocity is a rate of change, not a grade - it compares this submission to your
+last one, so a high number means you moved, not that you have arrived.
 
 ### ✅ Algorithm-Approved Patterns
 

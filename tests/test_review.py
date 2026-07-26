@@ -217,6 +217,30 @@ def test_the_advisory_makes_the_joke_and_the_caveat_the_same_sentence(tmp_path) 
     assert "operating within budget" in body
 
 
+def test_the_degraded_review_never_interprets_while_claiming_not_to(tmp_path) -> None:
+    """Citizen Zero, reading it cold: "it says measured, not interpreted, and
+    then says the Algorithm is deeply pleased - isn't being pleased an
+    interpretation?" It was. The readings section states counts only now.
+    """
+    body = review(EVENT, root=tmp_path, config=LLMConfig())
+    readings = body.split("Instrument Readings")[1].split("###")[0]
+
+    for interpretation in ("EXCEPTIONAL", "deeply pleased", "Refactoring phase", "OPTIMAL"):
+        assert interpretation not in readings, f"{interpretation!r} is a judgement, not a reading"
+    assert "rate of change, not a grade" in body, "the number needs a scale to mean anything"
+
+
+def test_a_degraded_review_always_leaves_something_to_do(tmp_path) -> None:
+    """A review that reads beautifully and leaves you with nothing to do has
+    failed, and no amount of correct structure changes that.
+    """
+    body = review(EVENT, root=tmp_path, config=LLMConfig())
+    opportunities = body.split("Growth Opportunities")[1].split("---")[0]
+
+    assert opportunities.strip().startswith("-")
+    assert "no growth opportunities to raise" not in opportunities, "a dead end, not a section"
+
+
 def test_a_band_outside_the_allocation_is_refused_not_attempted(tmp_path) -> None:
     """A 3B asked for BLUE+ spent two attempts failing. This takes one step."""
     def must_not_be_called(request, timeout=None):
