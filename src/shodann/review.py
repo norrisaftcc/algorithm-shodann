@@ -23,6 +23,7 @@ import argparse
 import json
 import sys
 import traceback
+from dataclasses import replace
 from pathlib import Path
 
 from .analysis import AnalysisReports
@@ -47,6 +48,7 @@ __all__ = [
     "emergency_comment",
     "main",
     "pr_facts",
+    "reconcile_coverage",
     "reduced_allocation_comment",
     "review",
 ]
@@ -129,8 +131,90 @@ def collect_metrics(
     )
 
 
+def reconcile_coverage(
+    metrics: CodeMetrics, record: CitizenRecord, reports: AnalysisReports
+) -> tuple[CodeMetrics, CodeMetrics | None]:
+    """Hold coverage still unless both sides of the comparison were measured.
+
+    A delta is a claim about the past. ``collect_metrics`` has to hand the
+    engine a float, so an absent reading arrives as 0.0 - and the engine, which
+    cannot tell that zero from a real one, then reports a 98-point gain to a
+    citizen whose coverage did not move (the instrument arrived) or a 91-point
+    collapse to one whose analysis job merely died. Both are punitive branches
+    caused by infrastructure, which the behavioural contract forbids.
+
+    So when either side is unmeasured, both sides are set to whichever figure
+    is real. The delta is zero, the celebrations stay quiet, and the score
+    stops swinging on whether a tool ran. A *measured* zero is untouched: 0 to
+    30 is US-1.3's flagship case and must keep scoring as the gain it is.
+
+    Returned rather than mutated, because the current metrics are also what
+    gets written to the ledger - and a cycle with no reading should carry the
+    last real figure forward rather than recording a zero that resets every
+    future delta.
+    """
+    previous = record.last_metrics
+    if reports.coverage_instrumented and (previous is None or record.coverage_instrumented):
+        return metrics, previous
+    if previous is None:
+        # No history and no reading: the baseline is already zero on both
+        # sides, so nothing can be inferred and nothing needs holding.
+        return replace(metrics, coverage=0.0), previous
+
+    anchor = metrics.coverage if reports.coverage_instrumented else previous.coverage
+    return replace(metrics, coverage=anchor), replace(previous, coverage=anchor)
+
+
+def _coverage_reading(reports: AnalysisReports, record: CitizenRecord, first: bool) -> str:
+    """One sentence of coverage, or one sentence saying there is none.
+
+    Coverage is the heaviest term in the velocity score and the one number a
+    citizen is most likely to be chasing. Leaving it out of the degraded
+    readout meant the review most citizens actually receive was silent about
+    the measurement it was most driven by.
+
+    A delta is only claimed when the previous figure was itself measured. A
+    stored zero from a cycle that never ran coverage is not a reading, and
+    subtracting from it would announce a gain the citizen did not make - the
+    same class of error as telling a first submission it compares to its
+    predecessor.
+    """
+    if not reports.coverage_instrumented:
+        return (
+            "Coverage: not measured this cycle. The coverage tool reported nothing, "
+            "which is a gap in the readings rather than a score of zero."
+        )
+
+    current = f"Coverage: {reports.coverage}% of lines run by your tests."
+    previous = record.last_metrics.coverage if record.last_metrics else None
+    if first or previous is None:
+        # A genuine first submission. US-1.3 treats this as a gain from zero
+        # and the celebrations say so, so the readout must not undercut them
+        # by implying the number means nothing yet.
+        return f"{current} This is your first measured reading."
+    if not record.coverage_instrumented:
+        # Not the same situation, and it needs its own sentence: there *is* a
+        # previous submission, it simply was never measured. Claiming a gain
+        # against it would credit the citizen for the instrument arriving.
+        return (
+            f"{current} Your previous submission was not measured, "
+            "so this one starts the comparison."
+        )
+
+    delta = round(reports.coverage - previous, 1)
+    if delta > 0:
+        return f"{current} \U0001f4c8 Up {delta} from {previous}%."
+    if delta < 0:
+        return f"{current} \U0001f4c9 Down {abs(delta)} from {previous}%."
+    return f"{current} Unchanged from {previous}%."
+
+
 def reduced_allocation_comment(
-    facts: dict, result: VelocityResult, record: CitizenRecord, reason: str
+    facts: dict,
+    result: VelocityResult,
+    record: CitizenRecord,
+    reason: str,
+    reports: AnalysisReports | None = None,
 ) -> str:
     """The review a citizen gets when nothing interpreted their readings.
 
@@ -147,7 +231,8 @@ def reduced_allocation_comment(
     # one, except this is called Submission 1, so I don't think there was a
     # last submission to compare to." There was not - and saying otherwise
     # taught a beginner to distrust the only sentence explaining the number.
-    if result.is_first_submission or record.pr_count <= 1:
+    first = result.is_first_submission or record.pr_count <= 1
+    if first:
         scale_note = (
             "Velocity is a rate of change, not a grade. This is your first "
             "submission, so there is nothing to compare against yet - this number "
@@ -160,6 +245,7 @@ def reduced_allocation_comment(
             "that you have arrived."
         )
 
+    coverage = _coverage_reading(reports or AnalysisReports(), record, first)
     celebrations = "\n".join(f"- {line}" for line in result.celebrations[:3])
     # Citizen Zero, reading this cold: "a review that leaves you with nothing
     # to do has failed." An empty section is not neutral - it is a dead end.
@@ -192,6 +278,8 @@ is yours. Please verify anything that matters.
 
 Submission {record.pr_count}. {result.iterations} commit(s), \
 {facts["files_changed"]} file(s) touched. Velocity score: {result.score}.
+
+{coverage}
 
 {scale_note}
 
@@ -317,8 +405,10 @@ def review(
         else AnalysisReports()
     )
     record = load_citizen_history(facts["citizen"], root)
-    metrics = collect_metrics(root, reports)
-    result = calculate_velocity(metrics, record.last_metrics, facts["commits"])
+    metrics, previous = reconcile_coverage(
+        collect_metrics(root, reports), record, reports
+    )
+    result = calculate_velocity(metrics, previous, facts["commits"])
 
     # The submission number this is about to become. State is written at the
     # end rather than here, because what gets recorded includes whether the
@@ -336,7 +426,7 @@ def review(
     if degradation:
         # Refused before a prompt is even assembled: no tokens, no latency,
         # and a reason a citizen can read.
-        body = reduced_allocation_comment(facts, result, record, degradation)
+        body = reduced_allocation_comment(facts, result, record, degradation, reports)
 
     try:
         if degradation:
@@ -366,11 +456,16 @@ def review(
         pass
     except LLMUnavailable as unavailable:
         degradation = str(unavailable)
-        body = reduced_allocation_comment(facts, result, record, degradation)
+        body = reduced_allocation_comment(facts, result, record, degradation, reports)
 
     if write_state:
         save_citizen_history(
-            facts["citizen"], metrics, result, root, degradation=degradation
+            facts["citizen"],
+            metrics,
+            result,
+            root,
+            degradation=degradation,
+            coverage_instrumented=reports.coverage_instrumented,
         )
     return body
 

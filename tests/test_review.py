@@ -20,6 +20,7 @@ from shodann.review import (
 )
 from shodann.state import CitizenRecord, citizen_path, load_citizen_history
 from shodann.validator import REDUCED_ALLOCATION, STANDARD, blocks_posting, validate
+from shodann.velocity import CodeMetrics
 
 EVENT = {
     "pull_request": {
@@ -269,6 +270,202 @@ def test_a_degraded_review_always_leaves_something_to_do(tmp_path) -> None:
 
     assert opportunities.strip().startswith("-")
     assert "no growth opportunities to raise" not in opportunities, "a dead end, not a section"
+
+
+# --- coverage in the degraded readout -------------------------------------
+#
+# The readout most citizens actually receive was silent about the measurement
+# the velocity score is most driven by. A citizen at 98.6% saw no coverage
+# figure anywhere in their review.
+
+
+def instrumented(tmp_path, percent: float) -> str:
+    """A coverage report of the shape the analysis job uploads."""
+    directory = tmp_path / "reports"
+    directory.mkdir(exist_ok=True)
+    (directory / "coverage.json").write_text(
+        json.dumps({"totals": {"percent_covered": percent}}), encoding="utf-8"
+    )
+    return str(directory)
+
+
+def ledger(tmp_path, *, coverage: float, measured: bool) -> None:
+    """A prior submission on record, with or without a real coverage reading."""
+    path = citizen_path("octocat", tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = CitizenRecord(
+        citizen="octocat",
+        pr_count=2,
+        baseline_established=True,
+        last_metrics=CodeMetrics(coverage=coverage, test_count=5),
+        coverage_instrumented=measured,
+    )
+    path.write_text(json.dumps(record.to_dict()), encoding="utf-8")
+
+
+def readings_of(body: str) -> str:
+    return body.split("Instrument Readings")[1].split("###")[0]
+
+
+def test_a_measured_coverage_figure_reaches_the_citizen(tmp_path) -> None:
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 98.6), write_state=False,
+    )
+    assert "98.6%" in readings_of(body)
+
+
+def test_an_unmeasured_coverage_is_named_as_a_gap_not_a_zero(tmp_path) -> None:
+    """Absent is not zero, all the way to the sentence a student reads."""
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+    readings = readings_of(body)
+
+    assert "not measured this cycle" in readings
+    assert "rather than a score of zero" in readings
+    assert "0.0%" not in readings, "an unmeasured reading must never print as a number"
+
+
+def test_a_first_submission_is_not_offered_a_comparison_it_cannot_have(tmp_path) -> None:
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 30.0), write_state=False,
+    )
+    readings = readings_of(body)
+
+    assert "30.0%" in readings
+    assert "This is your first measured reading" in readings
+    assert "Up " not in readings, "there is nothing to be up from"
+
+
+def test_a_coverage_gain_is_stated_against_the_previous_figure(tmp_path) -> None:
+    ledger(tmp_path, coverage=62.5, measured=True)
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 71.0), write_state=False,
+    )
+    assert "Up 8.5 from 62.5%" in readings_of(body)
+
+
+def test_a_coverage_drop_is_stated_plainly_and_without_reproach(tmp_path) -> None:
+    ledger(tmp_path, coverage=71.0, measured=True)
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 62.5), write_state=False,
+    )
+    readings = readings_of(body)
+
+    assert "Down 8.5 from 71.0%" in readings
+    assert not blocks_posting(validate(body, REDUCED_ALLOCATION))
+
+
+def test_a_genuine_zero_to_thirty_is_a_gain_worth_stating(tmp_path) -> None:
+    """US-1.3's flagship case. A *measured* zero is a real starting point."""
+    ledger(tmp_path, coverage=0.0, measured=True)
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 30.0), write_state=False,
+    )
+    assert "Up 30.0 from 0.0%" in readings_of(body)
+
+
+def test_a_stored_zero_that_nobody_measured_is_not_claimed_as_a_gain(tmp_path) -> None:
+    """The trap. Every ledger written before instrumentation holds 0.0, and
+    subtracting from it would tell a citizen their coverage rose 98 points on
+    the cycle it was first measured. It did not; the instrument arrived.
+    """
+    ledger(tmp_path, coverage=0.0, measured=False)
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 98.6), write_state=False,
+    )
+    readings = readings_of(body)
+
+    assert "98.6%" in readings
+    assert "Up 98.6" not in readings
+    assert "previous submission was not measured" in readings, (
+        "a different situation from a first submission, and it needs its own sentence"
+    )
+
+
+def test_the_ledger_records_whether_coverage_was_measured(tmp_path) -> None:
+    review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 44.0),
+    )
+    assert load_citizen_history("octocat", tmp_path).coverage_instrumented
+
+    review(EVENT, root=tmp_path, config=LLMConfig())
+    assert not load_citizen_history("octocat", tmp_path).coverage_instrumented, (
+        "a cycle whose analysis died must not leave the last reading looking current"
+    )
+
+
+def test_the_coverage_line_does_not_push_the_readout_over_its_budget(tmp_path) -> None:
+    ledger(tmp_path, coverage=62.5, measured=True)
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 71.0), write_state=False,
+    )
+    assert not blocks_posting(validate(body, REDUCED_ALLOCATION))
+
+
+# --- the score has to agree with the readout ------------------------------
+#
+# Found by rendering the comment rather than by any assertion: the readings
+# section correctly refused to claim a gain while the celebrations two
+# sections down announced "Coverage jumped 98.6%!" - one comment stating both
+# that no comparison exists and that a large one does.
+
+
+def test_an_unmeasured_cycle_does_not_collapse_the_score(tmp_path) -> None:
+    """A dead analysis job is not a 91-point regression by the citizen."""
+    ledger(tmp_path, coverage=91.2, measured=True)
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert "Coverage dropped" not in body
+    assert "not measured this cycle" in readings_of(body)
+
+
+def test_the_instrument_arriving_is_not_celebrated_as_the_citizen_improving(
+    tmp_path,
+) -> None:
+    """The contradiction itself. Both sections must tell the same story."""
+    ledger(tmp_path, coverage=0.0, measured=False)
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 98.6), write_state=False,
+    )
+    patterns = body.split("Approved Patterns")[1].split("###")[0]
+
+    assert "previous submission was not measured" in readings_of(body)
+    assert "jumped" not in patterns, "the readings deny the gain the celebration claims"
+    assert "First tests are hardest tests" not in patterns, (
+        "they may have had 98.6% all along; only the instrument is new"
+    )
+
+
+def test_a_measured_zero_to_thirty_still_scores_as_the_gain_it_is(tmp_path) -> None:
+    """The reconciliation must not flatten US-1.3's flagship case."""
+    ledger(tmp_path, coverage=0.0, measured=True)
+    body = review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 30.0), write_state=False,
+    )
+    assert "Up 30.0 from 0.0%" in readings_of(body)
+    assert "Coverage" in body.split("Approved Patterns")[1].split("###")[0]
+
+
+def test_an_unmeasured_cycle_carries_the_last_real_figure_forward(tmp_path) -> None:
+    """Recording a zero would reset every future delta - the #47 defect."""
+    review(
+        EVENT, root=tmp_path, config=LLMConfig(),
+        reports_dir=instrumented(tmp_path, 88.0),
+    )
+    review(EVENT, root=tmp_path, config=LLMConfig())
+
+    record = load_citizen_history("octocat", tmp_path)
+    assert record.last_metrics.coverage == 88.0, "the baseline survives a dead tool"
+    assert not record.coverage_instrumented, "carried forward, not freshly measured"
 
 
 def test_a_band_outside_the_allocation_is_refused_not_attempted(tmp_path) -> None:
