@@ -24,6 +24,7 @@ import json
 import sys
 from pathlib import Path
 
+from .capability import FULL, Capabilities, refusal_reason
 from .groundedness import check_groundedness
 from .llm import LLMConfig, LLMUnavailable, generate
 from .prompts import build_context, render_prompt
@@ -38,7 +39,7 @@ from .validator import (
 )
 from .velocity import CodeMetrics, VelocityResult, calculate_velocity
 
-__all__ = ["collect_metrics", "facts_only_comment", "main", "pr_facts", "review"]
+__all__ = ["collect_metrics", "main", "pr_facts", "reduced_allocation_comment", "review"]
 
 EXCLUDED_DIRS = frozenset(
     {
@@ -105,35 +106,45 @@ def collect_metrics(root: Path | str = ".") -> CodeMetrics:
     )
 
 
-def facts_only_comment(
+def reduced_allocation_comment(
     facts: dict, result: VelocityResult, record: CitizenRecord, reason: str
 ) -> str:
-    """The comment a citizen gets when no model could be reached.
+    """The review a citizen gets when nothing interpreted their readings.
 
     PRD section 8 commits to graceful degradation: a student always receives
-    *some* feedback. This is that floor, and it honours the same output
-    contract as a generated response - it is quieter, not lesser.
+    *some* feedback. This is that floor, and it is a *visibly different*
+    review rather than a quieter one wearing a footnote.
+
+    The readings here are as trustworthy as any other review's - they come
+    from tools, which cannot invent. What is missing is interpretation, and
+    the mode says so where a citizen will read it. If the lesson is "say when
+    you don't know", the saying has to be as visible as the knowing.
     """
     celebrations = "\n".join(f"- {line}" for line in result.celebrations[:3])
     opportunities = "\n".join(f"- {line}" for line in result.opportunities) or (
         "- The Algorithm has no growth opportunities to raise this iteration."
     )
-    next_step = (
-        "Keep the iteration cadence. The Algorithm will have more to say once "
-        "the analysis tools are online."
-    )
 
     return f"""## \U0001f916 SHODANN Analysis Complete
 
-**Citizen**: @{facts["citizen"]} | **Clearance**: {clearance_name(record.clearance_level)} | \
-**Velocity**: {result.score}
+**Citizen**: @{facts["citizen"]} | \
+**Clearance**: {clearance_name(record.clearance_level)} | \
+**Status**: REDUCED ALLOCATION
 
 ---
 
-### \U0001f680 Shipping Velocity Report
+### ⚡ Resource Advisory
+
+The Algorithm reviewed this submission using minimal resources. You are welcome.
+
+Synthesis was unavailable this cycle ({reason}), so what follows is instrument
+readings only - measured, not interpreted. The numbers are sound. The judgement
+is yours. Please verify anything that matters.
+
+### \U0001f4ca Instrument Readings
 
 {result.assessment}. Submission {record.pr_count} across {result.iterations} \
-commit(s), touching {facts["files_changed"]} file(s).
+commit(s), touching {facts["files_changed"]} file(s). Velocity: {result.score}.
 
 ### ✅ Algorithm-Approved Patterns
 
@@ -143,16 +154,14 @@ commit(s), touching {facts["files_changed"]} file(s).
 
 {opportunities}
 
-### \U0001f527 Recommended Iteration
-
-{next_step}
-
 ---
 
-*The Algorithm sees your growth. The Algorithm is pleased.*
-
-<sub>Generated without model synthesis ({reason}).</sub>
+*The Algorithm sees your growth. The Algorithm is operating within budget.*
 """
+
+
+class _AlreadyResolved(Exception):
+    """The review was settled before a model was needed."""
 
 
 def _spec_for(record: CitizenRecord, mode: str) -> ResponseSpec:
@@ -197,6 +206,7 @@ def review(
     *,
     root: Path | str = ".",
     config: LLMConfig | None = None,
+    capabilities: Capabilities = FULL,
     mode: str = "standard",
     opener=None,
     write_state: bool = True,
@@ -209,14 +219,27 @@ def review(
     metrics = collect_metrics(root)
     result = calculate_velocity(metrics, record.last_metrics, facts["commits"])
 
-    if write_state:
-        record = save_citizen_history(facts["citizen"], metrics, result, root)
-    else:
-        record.pr_count += 1
-
+    # The submission number this is about to become. State is written at the
+    # end rather than here, because what gets recorded includes whether the
+    # review degraded - which is not known yet.
+    record.pr_count += 1
     spec = _spec_for(record, mode)
 
+    # Refuse outside the envelope rather than attempting and discovering. A 3B
+    # model asked for the BLUE+ peer register spent two attempts failing; this
+    # reaches the same outcome in one step, with a reason worth recording.
+    degradation: str | None = refusal_reason(
+        capabilities, band=record.clearance_level, mode=mode
+    )
+    body = ""
+    if degradation:
+        # Refused before a prompt is even assembled: no tokens, no latency,
+        # and a reason a citizen can read.
+        body = reduced_allocation_comment(facts, result, record, degradation)
+
     try:
+        if degradation:
+            raise _AlreadyResolved
         context = build_context(
             result,
             record,
@@ -238,9 +261,18 @@ def review(
         # will not once SHODANN reviews someone else's repo, and at that point
         # the templates need to ship as package data.
         prompt = render_prompt(context)
-        return _synthesise(prompt, spec, config, opener=opener)
+        body = _synthesise(prompt, spec, config, opener=opener)
+    except _AlreadyResolved:
+        pass
     except LLMUnavailable as unavailable:
-        return facts_only_comment(facts, result, record, str(unavailable))
+        degradation = str(unavailable)
+        body = reduced_allocation_comment(facts, result, record, degradation)
+
+    if write_state:
+        save_citizen_history(
+            facts["citizen"], metrics, result, root, degradation=degradation
+        )
+    return body
 
 
 def main(argv: list[str] | None = None) -> int:

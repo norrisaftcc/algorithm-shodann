@@ -7,10 +7,11 @@ import json
 
 import pytest
 
+from shodann.capability import LOCAL_SMALL
 from shodann.llm import LLMConfig, LLMUnavailable, generate
 from shodann.review import collect_metrics, main, pr_facts, review
-from shodann.state import citizen_path, load_citizen_history
-from shodann.validator import STANDARD, blocks_posting, validate
+from shodann.state import CitizenRecord, citizen_path, load_citizen_history
+from shodann.validator import REDUCED_ALLOCATION, STANDARD, blocks_posting, validate
 
 EVENT = {
     "pull_request": {
@@ -175,7 +176,7 @@ def test_two_bad_responses_fall_back_rather_than_posting_the_second(tmp_path) ->
     body = review(EVENT, root=tmp_path, config=CONFIG, opener=responder(bad, bad))
 
     assert "You should" not in body
-    assert "Generated without model synthesis" in body
+    assert "REDUCED ALLOCATION" in body
 
 
 # --- degradation ----------------------------------------------------------
@@ -198,12 +199,65 @@ def test_an_unreachable_model_still_produces_a_comment(tmp_path) -> None:
     assert "SHODANN Analysis Complete" in body
 
 
-def test_the_fallback_comment_honours_the_output_contract(tmp_path) -> None:
-    """The degraded path is quieter, not lesser. It passes the same validator."""
+def test_the_degraded_comment_honours_its_own_contract(tmp_path) -> None:
+    """A visibly different review, not a quieter one wearing a footnote."""
     body = review(EVENT, root=tmp_path, config=LLMConfig())
-    violations = validate(body, STANDARD)
 
+    violations = validate(body, REDUCED_ALLOCATION)
     assert not blocks_posting(violations), [str(v) for v in violations]
+    assert blocks_posting(validate(body, STANDARD)), "it is deliberately not a standard review"
+
+
+def test_the_advisory_makes_the_joke_and_the_caveat_the_same_sentence(tmp_path) -> None:
+    body = review(EVENT, root=tmp_path, config=LLMConfig())
+
+    assert "using minimal resources. You are welcome." in body
+    assert "measured, not interpreted" in body
+    assert "verify anything that matters" in body
+    assert "operating within budget" in body
+
+
+def test_a_band_outside_the_allocation_is_refused_not_attempted(tmp_path) -> None:
+    """A 3B asked for BLUE+ spent two attempts failing. This takes one step."""
+    def must_not_be_called(request, timeout=None):
+        raise AssertionError("the model was asked for a band it does not serve")
+
+    event = {"pull_request": {**EVENT["pull_request"], "user": {"login": "peer"}}}
+    citizen_path("peer", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    citizen_path("peer", tmp_path).write_text(
+        json.dumps(CitizenRecord(citizen="peer", clearance_level=6).to_dict()),
+        encoding="utf-8",
+    )
+
+    body = review(
+        event, root=tmp_path, config=CONFIG, capabilities=LOCAL_SMALL,
+        opener=must_not_be_called, write_state=False,
+    )
+
+    assert "REDUCED ALLOCATION" in body
+    assert "clearance 3 and below" in body
+
+
+def test_a_mode_outside_the_allocation_is_refused(tmp_path) -> None:
+    body = review(
+        EVENT, root=tmp_path, config=CONFIG, capabilities=LOCAL_SMALL,
+        mode="massive_pr", opener=responder("unused"), write_state=False,
+    )
+    assert "does not serve massive pr submissions" in body
+
+
+def test_the_allocation_serves_the_bands_it_claims(tmp_path) -> None:
+    body = review(
+        EVENT, root=tmp_path, config=CONFIG, capabilities=LOCAL_SMALL,
+        opener=responder(GOOD_RESPONSE),
+    )
+    assert body == GOOD_RESPONSE.strip(), "RED is inside a local allocation"
+
+
+def test_the_reason_is_recorded_on_the_citizen(tmp_path) -> None:
+    """So the capability matrix comes from real runs, not hand-maintenance."""
+    review(EVENT, root=tmp_path, config=LLMConfig())
+    assert "no model configured" in load_citizen_history("octocat", tmp_path).last_degradation
 
 
 def test_the_fallback_never_uses_forbidden_vocabulary(tmp_path) -> None:
