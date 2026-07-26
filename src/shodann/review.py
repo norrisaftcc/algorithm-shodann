@@ -25,6 +25,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from .analysis import AnalysisReports
 from .capability import FULL, Capabilities, refusal_reason
 from .groundedness import check_groundedness
 from .llm import LLMConfig, LLMUnavailable, generate
@@ -90,15 +91,20 @@ def pr_facts(event: dict) -> dict:
     }
 
 
-def collect_metrics(root: Path | str = ".") -> CodeMetrics:
-    """Count what can be counted without running anything.
+def collect_metrics(
+    root: Path | str = ".", reports: AnalysisReports | None = None
+) -> CodeMetrics:
+    """Count what can be counted, and fold in whatever was measured elsewhere.
 
-    Rung 1 deliberately runs no analysis tools. Reading source is cheap, needs
-    no toolchain, and cannot execute a student's code - which matters more
-    than the extra signal a test run would add. Coverage stays zero until the
-    hard-analysis job exists, so velocity here is carried by test growth,
-    documentation and iteration count.
+    Reading source is cheap, needs no toolchain, and cannot execute a
+    citizen's code. Coverage and lint counts can only come from *running*
+    things, which happens in a separate unprivileged job - see
+    `shodann.analysis`. This function never runs anything.
+
+    Without reports, coverage stays 0.0 and is reported as *not instrumented*
+    rather than as a measured zero.
     """
+    reports = reports or AnalysisReports()
     loc = tests = functions = docstrings = 0
     for path in sorted(Path(root).rglob("*.py")):
         if any(part in EXCLUDED_DIRS or part.endswith(".egg-info") for part in path.parts):
@@ -113,12 +119,13 @@ def collect_metrics(root: Path | str = ".") -> CodeMetrics:
         docstrings += body.count('"""') // 2
 
     return CodeMetrics(
-        coverage=0.0,
+        coverage=reports.coverage or 0.0,
         test_count=tests,
         complexity=functions,
         loc=loc,
         functions=functions,
         docstrings=docstrings,
+        lint_issues=reports.lint_issues or 0,
     )
 
 
@@ -293,6 +300,7 @@ def review(
     event: dict,
     *,
     root: Path | str = ".",
+    reports_dir: Path | str | None = None,
     config: LLMConfig | None = None,
     capabilities: Capabilities = FULL,
     mode: str = "standard",
@@ -303,8 +311,13 @@ def review(
     facts = pr_facts(event)
     config = config or LLMConfig.from_env()
 
+    reports = (
+        AnalysisReports.from_directory(reports_dir)
+        if reports_dir is not None
+        else AnalysisReports()
+    )
     record = load_citizen_history(facts["citizen"], root)
-    metrics = collect_metrics(root)
+    metrics = collect_metrics(root, reports)
     result = calculate_velocity(metrics, record.last_metrics, facts["commits"])
 
     # The submission number this is about to become. State is written at the
@@ -338,10 +351,9 @@ def review(
             # The same spec the response will be judged against, so the
             # instructions and the checks cannot disagree.
             spec=spec,
-            # Rung 1 runs no coverage tool, so the reading is absent rather
-            # than zero. Saying so is the difference between a model reporting
-            # a gap and a model celebrating one.
-            coverage_instrumented=False,
+            # An absent reading is not a zero. Saying so is the difference
+            # between a model reporting a gap and a model celebrating one.
+            coverage_instrumented=reports.coverage_instrumented,
         )
         # Note the asymmetry: `root` is the citizen's repository, but the
         # prompt library is SHODANN's own and is read relative to the working
@@ -368,6 +380,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--event", required=True, help="path to the GitHub event payload")
     parser.add_argument("--out", required=True, help="where to write the comment body")
     parser.add_argument("--root", default=".")
+    parser.add_argument(
+        "--reports",
+        help="directory holding coverage.json and ruff.json from the analysis job",
+    )
     parser.add_argument("--mode", default="standard", choices=sorted(SPECS))
     parser.add_argument(
         "--dry-run",
@@ -379,7 +395,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with Path(args.event).open(encoding="utf-8") as handle:
             event = json.load(handle)
-        body = review(event, root=args.root, mode=args.mode, write_state=not args.dry_run)
+        body = review(
+            event,
+            root=args.root,
+            reports_dir=args.reports,
+            mode=args.mode,
+            write_state=not args.dry_run,
+        )
         exit_code = 0
     except Exception:  # noqa: BLE001 - the last thing between a defect and silence
         # Everything inside the review degrades to a comment. A defect in the

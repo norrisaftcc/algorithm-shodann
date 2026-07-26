@@ -37,8 +37,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # =========================================================================
+  # This is the only job that executes a citizen's code, and it is the only
+  # job that holds nothing worth stealing. `permissions: contents: read` is
+  # enforced on the token; the model key is simply never mapped into this
+  # environment, so a hostile test cannot read a secret that is not there.
+  #
+  # It produces JSON and nothing else. The privileged job below reads that
+  # JSON and never runs anything the citizen wrote. That division is the
+  # entire reason coverage waited until season two: measuring it requires
+  # running their tests, and running their tests must not happen next to a
+  # write token.
+  # =========================================================================
+  analyse:
+    name: Hard analysis
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the submission
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install the frozen toolchain
+        run: pip install --quiet "ruff==0.16.0" pytest pytest-cov
+
+      - name: Install the submission
+        # A citizen's project may or may not be installable. Neither outcome
+        # stops the analysis - a repository that will not install is itself a
+        # finding, and the reports below still say what they can.
+        run: |
+          pip install --quiet -e . 2>/dev/null             || pip install --quiet -r requirements.txt 2>/dev/null             || echo "Nothing to install; analysing as-is."
+
+      - name: Style and complexity
+        # Findings exit non-zero. Findings are the point.
+        run: ruff check . --output-format=json > ruff.json || true
+
+      - name: Tests and coverage
+        # Failing tests are data, not a broken job. A citizen whose suite is
+        # red still gets a review, and it is the review's job to say so
+        # kindly.
+        run: |
+          pytest --cov=. --cov-report=json:coverage.json -q || true
+          test -f coverage.json || echo '{}' > coverage.json
+
+      - name: Hand the readings over
+        uses: actions/upload-artifact@v4
+        with:
+          name: shodann-reports
+          path: |
+            coverage.json
+            ruff.json
+          retention-days: 7
+
   review:
     name: The Algorithm observes
+    needs: [analyse]
+    # `always()` so a merge still records the ledger even though the analysis
+    # job is skipped on close, and so a citizen still hears something when
+    # their own tests take the analysis job down with them.
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -69,6 +136,14 @@ jobs:
 
       - name: Install SHODANN
         run: pip install --quiet .
+
+      - name: Collect the readings
+        if: github.event.action != 'closed'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: shodann-reports
+          path: shodann-reports
 
       - name: Compose the review
         id: compose
