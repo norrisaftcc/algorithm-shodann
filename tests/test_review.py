@@ -230,6 +230,28 @@ def test_the_degraded_review_never_interprets_while_claiming_not_to(tmp_path) ->
     assert "rate of change, not a grade" in body, "the number needs a scale to mean anything"
 
 
+def test_a_first_submission_is_not_told_to_compare_with_its_predecessor(tmp_path) -> None:
+    """Citizen Zero: "it compares to my last one, except this is Submission 1."
+
+    There was no predecessor. Explaining a number with a comparison that
+    cannot exist teaches a beginner to distrust the explanation.
+    """
+    body = review(EVENT, root=tmp_path, config=LLMConfig())
+
+    assert "this is your first submission" in body.lower()
+    assert "compares this submission to your last one" not in body
+    assert "baseline your next one moves from" in body
+
+
+def test_the_status_says_it_is_not_about_the_citizen(tmp_path) -> None:
+    """Citizen Zero: "REDUCED ALLOCATION sounds like I did something to lose
+    points." It sits in the header, above any explanation, and a student reads
+    the header first.
+    """
+    body = review(EVENT, root=tmp_path, config=LLMConfig())
+    assert "describes the Algorithm's allocation, not your work" in body
+
+
 def test_a_degraded_review_always_leaves_something_to_do(tmp_path) -> None:
     """A review that reads beautifully and leaves you with nothing to do has
     failed, and no amount of correct structure changes that.
