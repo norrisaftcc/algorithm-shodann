@@ -136,9 +136,30 @@ def reduced_allocation_comment(
     the mode says so where a citizen will read it. If the lesson is "say when
     you don't know", the saying has to be as visible as the knowing.
     """
+    # Citizen Zero, on a first submission: "it says it compares to my last
+    # one, except this is called Submission 1, so I don't think there was a
+    # last submission to compare to." There was not - and saying otherwise
+    # taught a beginner to distrust the only sentence explaining the number.
+    if result.is_first_submission or record.pr_count <= 1:
+        scale_note = (
+            "Velocity is a rate of change, not a grade. This is your first "
+            "submission, so there is nothing to compare against yet - this number "
+            "is the baseline your next one moves from."
+        )
+    else:
+        scale_note = (
+            "Velocity is a rate of change, not a grade - it compares this "
+            "submission to your last one, so a high number means you moved, not "
+            "that you have arrived."
+        )
+
     celebrations = "\n".join(f"- {line}" for line in result.celebrations[:3])
+    # Citizen Zero, reading this cold: "a review that leaves you with nothing
+    # to do has failed." An empty section is not neutral - it is a dead end.
     opportunities = "\n".join(f"- {line}" for line in result.opportunities) or (
-        "- The Algorithm has no growth opportunities to raise this iteration."
+        "- Nothing in these readings raised one. If you want a next step anyway: "
+        "run your tests locally before your next push, so you see a failure "
+        "before The Algorithm does."
     )
 
     return f"""## \U0001f916 SHODANN Analysis Complete
@@ -153,14 +174,19 @@ def reduced_allocation_comment(
 
 The Algorithm reviewed this submission using minimal resources. You are welcome.
 
+**This status describes the Algorithm's allocation, not your work.** Nothing
+below is a mark against your submission - the Algorithm is the one running lean.
+
 Synthesis was unavailable this cycle ({reason}), so what follows is instrument
 readings only - measured, not interpreted. The numbers are sound. The judgement
 is yours. Please verify anything that matters.
 
 ### \U0001f4ca Instrument Readings
 
-{result.assessment}. Submission {record.pr_count} across {result.iterations} \
-commit(s), touching {facts["files_changed"]} file(s). Velocity: {result.score}.
+Submission {record.pr_count}. {result.iterations} commit(s), \
+{facts["files_changed"]} file(s) touched. Velocity score: {result.score}.
+
+{scale_note}
 
 ### ✅ Algorithm-Approved Patterns
 
