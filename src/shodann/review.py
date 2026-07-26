@@ -24,6 +24,7 @@ import json
 import sys
 from pathlib import Path
 
+from .groundedness import check_groundedness
 from .llm import LLMConfig, LLMUnavailable, generate
 from .prompts import build_context, render_prompt
 from .state import CitizenRecord, clearance_name, load_citizen_history, save_citizen_history
@@ -158,6 +159,17 @@ def _spec_for(record: CitizenRecord, mode: str) -> ResponseSpec:
     return for_clearance(SPECS[mode], record.clearance_level)
 
 
+def _inspect(response: str, prompt: str, spec: ResponseSpec) -> list:
+    """Contract violations and groundedness findings, together.
+
+    The two checks are deliberately separate modules and deliberately applied
+    together: one knows the shape a response must take, the other knows what
+    the model was actually shown. A response can satisfy either alone and
+    still be unfit to post.
+    """
+    return validate(response, spec) + check_groundedness(response, prompt)
+
+
 def _synthesise(
     prompt: str, spec: ResponseSpec, config: LLMConfig, opener=None
 ) -> str:
@@ -169,13 +181,13 @@ def _synthesise(
     transport = {"opener": opener} if opener is not None else {}
 
     response = generate(prompt, config, **transport)
-    violations = validate(response, spec)
-    if not blocks_posting(violations):
+    findings = _inspect(response, prompt, spec)
+    if not blocks_posting(findings):
         return response
 
-    retry = f"{prompt}\n\n{format_retry_instruction(violations)}"
+    retry = f"{prompt}\n\n{format_retry_instruction(findings)}"
     second = generate(retry, config, **transport)
-    if blocks_posting(validate(second, spec)):
+    if blocks_posting(_inspect(second, prompt, spec)):
         raise LLMUnavailable("response violated the output contract twice")
     return second
 
