@@ -82,7 +82,14 @@ jobs:
           python-version: '3.12'
 
       - name: Install the frozen toolchain
-        run: pip install --quiet "ruff==0.16.0" pytest pytest-cov
+        # Every tool whose output reaches the velocity score carries an exact
+        # pin, and pytest-cov is the one that matters most: coverage is the
+        # 2.0-weighted term, the largest in the composite. It ran unpinned
+        # beside an exactly pinned ruff, so a coverage.py release could move
+        # every citizen's heaviest input mid-cohort with nothing to show for
+        # it in the diff. pytest itself stays open - test count is read from
+        # source, never from a run.
+        run: pip install --quiet "ruff==0.16.0" "pytest-cov==7.1.0" pytest
 
       - name: Install the submission
         # A citizen's project may or may not be installable. Neither outcome

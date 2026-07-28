@@ -12,6 +12,7 @@ between a green CI run and a wrong number.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,45 @@ def test_the_citizen_does_not_choose_which_lint_rules_count(workflow: str) -> No
 
     assert "ruff check" in style
     assert "--isolated" in style, "rule selection is a score input, not a preference"
+
+
+def test_every_score_feeding_tool_is_pinned_exactly(workflow: str) -> None:
+    """An open version bound on a measurement tool is an unannounced rescore.
+
+    The freeze in PRD section 8 is about the numbers, not the source: a
+    coverage.py release that changes how partial branches are counted moves
+    every citizen's heaviest input with nothing in the diff to show for it.
+    ruff carried an exact pin from the start; pytest-cov, which produces the
+    2.0-weighted term, ran open beside it.
+
+    pytest is deliberately absent from this list. Test count is counted from
+    source in `collect_metrics`, never from a run, so no pytest release can
+    move it.
+    """
+    step = workflow.split("Install the frozen toolchain")[1].split("- name:")[0]
+    run = "\n".join(
+        line for line in step.splitlines() if line.strip() and not line.strip().startswith("#")
+    )
+
+    for tool in ("ruff", "pytest-cov"):
+        assert re.search(rf'"{re.escape(tool)}==[0-9]', run), (
+            f"{tool} output reaches the velocity score and must carry an exact pin"
+        )
+
+
+def test_the_pinned_versions_match_the_project_metadata(workflow: str) -> None:
+    """Two files install the measurement set; they must agree on which one.
+
+    The workflow measures the citizen and `pyproject.toml` builds the
+    maintainer's environment. A drift between them means a defect reproduces
+    on one and not the other, which is the slowest possible way to find it.
+    """
+    extras = (WORKFLOW.parent.parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+    for tool in ("ruff", "pytest-cov"):
+        in_workflow = re.search(rf'"{re.escape(tool)}==([0-9][^"]*)"', workflow)
+        in_project = re.search(rf'"{re.escape(tool)}==([0-9][^"]*)"', extras)
+        assert in_workflow and in_project, f"{tool} must be pinned in both files"
+        assert in_workflow.group(1) == in_project.group(1), f"{tool} pins disagree"
 
 
 def test_no_citizen_text_is_interpolated_into_a_shell(workflow: str) -> None:
