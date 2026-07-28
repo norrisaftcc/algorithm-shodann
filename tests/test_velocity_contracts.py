@@ -16,6 +16,7 @@ from shodann.velocity import (
     FIRST_TESTS_PHRASE,
     CodeMetrics,
     MetricDeltas,
+    _coverage_multiplier,
     calculate_velocity,
     composite_score,
 )
@@ -108,6 +109,50 @@ def test_the_retired_engine_really_did_score_them_the_same() -> None:
         metrics(coverage=80.0, **base), metrics(coverage=50.0, **base), 1, config=ORACLE_CONFIG
     )
     assert first.score == later.score == pytest.approx(60.50)
+
+
+def test_the_first_test_bonus_keeps_its_magnitude_not_just_its_sign() -> None:
+    """The direction of US-1.3 is cheap to satisfy. The strength is the promise.
+
+    `test_first_coverage_gain_outscores_an_equal_later_gain` above asserts only
+    `first.score > later.score`, and that ordering survives almost any positive
+    bonus: at `first_test_bonus = 0.05` the multipliers are 1.05 and 1.025, so
+    the comparison still passes while the pedagogy is gone. A surveyor moved
+    the constant 1.0 -> 0.05 and all 247 tests stayed green.
+
+    So pin the constant and the curve it produces. `first_test_bonus` is a
+    *score input*, and PRD section 8 freezes those for cohort 1: changing this
+    number after the first real submission invalidates every citizen's
+    baseline. A deliberate change means changing this test, which is the point.
+    """
+    assert DEFAULT_CONFIG.first_test_bonus == 1.0
+
+    # 1 + bonus * headroom, so a citizen at zero coverage earns double and a
+    # citizen at full coverage earns single. Nothing in between is special.
+    assert _coverage_multiplier(0.0, DEFAULT_CONFIG) == 2.0
+    assert _coverage_multiplier(50.0, DEFAULT_CONFIG) == 1.5
+    assert _coverage_multiplier(100.0, DEFAULT_CONFIG) == 1.0
+
+    # Out of range readings saturate rather than inverting the curve.
+    assert _coverage_multiplier(-10.0, DEFAULT_CONFIG) == 2.0
+    assert _coverage_multiplier(140.0, DEFAULT_CONFIG) == 1.0
+
+
+def test_the_bonus_is_worth_a_stated_number_of_points() -> None:
+    """The same coverage gain, from two bases, differing by a known amount.
+
+    Guards the magnitude end to end rather than in the multiplier alone: an
+    identical delta of 10 points scores `10 * 2.0 * (2.0 - 1.5)` = 10 higher
+    when it starts from zero. Under a flattened bonus of 0.05 the gap is 0.5.
+    """
+    base = dict(test_count=4, complexity=10, loc=200, functions=8, docstrings=3, lint_issues=2)
+    from_zero = calculate_velocity(
+        metrics(coverage=10.0, **base), metrics(coverage=0.0, **base), 1
+    )
+    from_fifty = calculate_velocity(
+        metrics(coverage=60.0, **base), metrics(coverage=50.0, **base), 1
+    )
+    assert from_zero.score - from_fifty.score == pytest.approx(10.0)
 
 
 def test_first_test_emits_the_required_phrase() -> None:
