@@ -56,6 +56,49 @@ def test_the_review_job_never_runs_citizen_code(workflow: str) -> None:
         assert runner not in review, f"{runner} belongs in the unprivileged job"
 
 
+# --- the score must not be gameable by the citizen being scored -------------
+#
+# Both of these are frozen-toolchain items. PRD section 8 freezes the
+# measurement set for cohort 1 because changing a measurement resets every
+# baseline, so these are free before the first real submission and impossible
+# after it. They are asserted here rather than trusted to a comment.
+
+
+def test_coverage_does_not_instrument_the_citizens_own_tests(workflow: str) -> None:
+    """`--cov=.` counts test files in the denominator.
+
+    Test modules run end to end, so they enter the average at ~100% and inflate
+    the 2.0-weighted term - the largest in the score. A citizen raises their
+    velocity by adding a test file that asserts nothing, which is the
+    lines-of-code metric wearing a different unit.
+    """
+    step = workflow.split("Tests and coverage")[1].split("- name:")[0]
+    # Only the executable lines. A comment naming the old flag to explain why
+    # it is wrong is documentation, not a defect - the first version of this
+    # test failed on its own rationale.
+    run = "\n".join(
+        line for line in step.splitlines() if line.strip() and not line.strip().startswith("#")
+    )
+
+    assert "--cov=." not in run, "the denominator must exclude the citizen's tests"
+    assert '"--cov=$COV"' in run
+    assert "if [ -d src ]" in run, "a flat-layout submission still gets measured"
+
+
+def test_the_citizen_does_not_choose_which_lint_rules_count(workflow: str) -> None:
+    """Without --isolated, ruff reads config from the repository being analysed.
+
+    The lint delta feeds the velocity score through the sqrt term, so rule
+    selection is a score input. A citizen could otherwise raise their own
+    velocity by editing their pyproject.toml, and counts would not be
+    comparable between citizens.
+    """
+    style = workflow.split("Style and complexity")[1].split("- name:")[0]
+
+    assert "ruff check" in style
+    assert "--isolated" in style, "rule selection is a score input, not a preference"
+
+
 def test_no_citizen_text_is_interpolated_into_a_shell(workflow: str) -> None:
     """The defect in design_docs/shodann-core.yml:131, asserted against."""
     for field in ("pull_request.title", "pull_request.body"):

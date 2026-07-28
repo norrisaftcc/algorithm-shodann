@@ -93,14 +93,32 @@ jobs:
 
       - name: Style and complexity
         # Findings exit non-zero. Findings are the point.
-        run: ruff check . --output-format=json > ruff.json || true
+        #
+        # --isolated: the citizen must not choose which rules are counted.
+        # Without it ruff resolves config from the repository being analysed,
+        # and the lint delta feeds the velocity score through the sqrt term -
+        # so a student could raise their own velocity by editing their
+        # pyproject.toml. Rule selection is a score input, not a preference.
+        run: ruff check . --isolated --output-format=json > ruff.json || true
 
       - name: Tests and coverage
         # Failing tests are data, not a broken job. A citizen whose suite is
         # red still gets a review, and it is the review's job to say so
         # kindly.
+        #
+        # --cov=src, never --cov=. - with no coverage config, `.` instruments
+        # the citizen's test files too. Test modules run end to end, so they
+        # enter the average at ~100% and inflate the 2.0-weighted term, the
+        # largest in the score. A citizen could raise their velocity by adding
+        # a test file that asserts nothing. That is the lines-of-code metric
+        # wearing a different unit, and it is the one thing a growth metric
+        # must not reward.
+        #
+        # Falls back to `.` only where no src/ exists, so a flat-layout
+        # submission is still measured rather than silently scoring zero.
         run: |
-          pytest --cov=. --cov-report=json:coverage.json -q || true
+          if [ -d src ]; then COV=src; else COV=.; fi
+          pytest "--cov=$COV" --cov-report=json:coverage.json -q || true
           test -f coverage.json || echo '{}' > coverage.json
 
       - name: Hand the readings over
