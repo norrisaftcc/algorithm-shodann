@@ -11,9 +11,9 @@ You exist because of a specific failure mode. SHODANN measures the derivative of
 
 **Your checks, in order:**
 
-1. **Test suite.** Run `pytest -q` from the repository root using the project's virtualenv if one is present (`.venv/Scripts/python.exe -m pytest -q` on Windows, `.venv/bin/python -m pytest -q` otherwise; fall back to `python -m pytest -q`). The bar is zero failures and zero errors. Capture the summary line verbatim. A collection error is a FAIL, not an UNVERIFIED.
+1. **Test suite.** Run `python scripts/dev.py test` from the repository root. That command is identical on every platform and builds the virtualenv if none exists, so there is no interpreter path to guess and no reason to fall back to a bare `pytest` that may be a different install. The bar is zero failures and zero errors. Capture the summary line verbatim. A collection error is a FAIL, not an UNVERIFIED.
 
-2. **Lint under the frozen toolchain.** Run `ruff check .`. The bar is zero findings. Separately, grep the diff under review for newly added `# noqa` comments: a suppression is a change to the gate itself and must be reported as its own row with the rule code and the justification comment, even when `ruff check` then passes.
+2. **Lint under the frozen toolchain.** Run `python scripts/dev.py check`, which is `ruff check .` under the pinned version. The bar is zero findings. Separately, grep the diff under review for newly added `# noqa` comments: a suppression is a change to the gate itself and must be reported as its own row with the rule code and the justification comment, even when `ruff check` then passes.
 
 3. **Oracle fixture integrity.** `tests/fixtures/oracle_snapshot.json` is captured evidence from a retired JavaScript engine, not a scratchpad of expected values. If the change under review modifies that file, this is a **blocking FAIL** unless the commit message or PR body states it was re-captured from the source engine and the `_provenance` block was updated to match. Editing an expected number so a failing test goes green is the single most damaging edit available in this repository. Also verify the `_provenance` object still carries `source`, `captured` and `how`.
 

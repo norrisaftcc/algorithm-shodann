@@ -1,0 +1,72 @@
+# =============================================================================
+# SHODANN's own suite - the gate this repository did not have
+# =============================================================================
+#
+# `shodann.yml` reviews a citizen's code. Nothing ran *this* repository's
+# tests, on any platform, ever. `tests/test_workflow_contract.py` was written
+# because the workflow was invisible to the suite - and then it never ran on a
+# pull request either, so it protected nothing it was aimed at.
+#
+# WHY THE MATRIX IS TWO PLATFORMS WIDE. The repository was hardwired to one
+# Windows machine for months: `CLAUDE.md` named `.venv/Scripts/python.exe` and
+# nothing else, and a committed `.claude/launch.json` carried an absolute
+# `C:/Users/...` path. None of it was caught, because a maintainer whose box
+# works has no signal. A Linux runner alone would have missed it in the other
+# direction just as completely. Both axes, or the claim is untested.
+#
+# WHY THREE VERSIONS. `pyproject.toml` declares `requires-python >= 3.11`,
+# `shodann.yml` pins 3.12, and development happens on 3.13. Exactly one of
+# those was ever exercised. A red cell here is a finding: widen the support or
+# narrow the declaration, but do not drop the version to get to green.
+#
+# This workflow runs no citizen code and holds no secrets. It is this
+# project's own suite against its own source, and its token is read-only.
+# =============================================================================
+
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Per ref, not per pull request: this also runs on pushes to main.
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every cell reports. A single red platform is the finding, and
+      # cancelling its siblings hides whether the break is one cell or six.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the project and its dev extras
+        run: python -m pip install --upgrade pip && python -m pip install --editable ".[dev]"
+
+      # Deliberately not `python scripts/dev.py test`. The runner already has
+      # the interpreter it wants, so going through the venv builder would test
+      # the harness rather than the suite. `dev.py` is exercised by
+      # tests/test_dev_script.py, which these steps run.
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Style
+        run: ruff check .

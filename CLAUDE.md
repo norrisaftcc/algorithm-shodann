@@ -57,21 +57,25 @@ The open "Python vs JavaScript" issue is resolved in favor of **Python**. Ration
 
 ## Commands
 
-There is a venv at `.venv/`. On Windows the interpreter is `.venv/Scripts/python.exe`; the bare `python` on PATH is a different install with no dependencies.
+Every command below is the same string on Windows, Linux, macOS and a Codespace. `scripts/dev.py` runs on the system interpreter and builds `.venv/` if it is absent, so a fresh clone needs no setup step.
 
 ```bash
-.venv/Scripts/python.exe -m pytest -q
+python scripts/dev.py test     # pytest -q
+python scripts/dev.py check    # ruff check .
+python scripts/dev.py all      # both; both must be clean before a PR
 ```
+
+One test: `python scripts/dev.py test tests/test_review.py::test_name` — trailing arguments pass through. **Never put a venv-relative interpreter path back into this section.** Naming only `.venv/Scripts/python.exe` made every non-Windows session start from a command that cannot work, for months, unnoticed. `.github/workflows/tests.yml` now gates the suite on Linux *and* Windows across 3.11–3.13, which is what makes the promise above checkable rather than asserted.
+
+**Rendering a review is a distinct check from testing one, and it has found what tests could not.** Two of the entries in `EARLY_RUNS.md` came from printing the comment and reading it — including a comment whose two sections contradicted each other about coverage while 243 tests passed.
 
 ```bash
-.venv/Scripts/ruff.exe check .
+python scripts/dev.py render
 ```
 
-One test: `-m pytest tests/test_review.py::test_name`. Both must be clean before a PR.
+Offline and read-only by construction: no model is configured, so it takes the REDUCED ALLOCATION path, and it never writes the ledger. `--event`, `--mode` and `--reports` are passed through.
 
-**Rendering a review is a distinct check from testing one, and it has found what tests could not.** Two of the nine entries in `EARLY_RUNS.md` came from printing the comment and reading it — including a comment whose two sections contradicted each other about coverage while 243 tests passed. Compose one with `shodann.review.review(event, root=..., config=LLMConfig())` (no model configured ⇒ the REDUCED ALLOCATION path) and read the output. On Windows set `PYTHONIOENCODING=utf-8` or the emoji crash the console.
-
-Watching a live run: `gh` is not on PATH here — it is `"/c/Program Files/GitHub CLI/gh.exe"`.
+Watching a live run: web and container sessions have no `gh` and use the GitHub MCP tools. On the maintainer's Windows box `gh` is not on PATH either — it is `"/c/Program Files/GitHub CLI/gh.exe"`.
 
 Tool commands in the specs run against the *student's* repo, not this one: `python -m py_compile`, `pytest --cov=. --cov-report=json`, `ruff check . --output-format=json`, and `bandit -r . -ll` (RAGE STATE only). `flake8` and `radon` appear throughout the specs and are superseded — see the toolchain freeze above.
 
