@@ -6,18 +6,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **SHODANN** (Simple, Heuristically Operated, Dynamically Adversarial Neural Network) is a spec for a GitHub Actions bot that posts satirical, growth-focused code review on student PRs. Its one real idea: rank students by **learning velocity** (rate of improvement) rather than absolute skill — a student going 0% → 30% coverage outranks one holding at 90%. Parent project: AlgoCratic Futures, a satirical corporate-dystopia teaching framework.
 
-**Nothing is wired up.** This is a documentation repo plus two unreferenced artifacts in `design_docs/`:
+**It runs.** As of 2026-07-26 this is a working system that reviews its own pull requests, not the documentation repo the older sections below were written against.
 
-- `growth-velocity.js` — a working Node CLI/module, the only executable code here
-- `shodann-core.yml` — a complete draft 5-job workflow that is **not** in `.github/workflows/` and does not run
+- `src/shodann/` — the implementation. Velocity engine, prompt assembly, output validator, groundedness probe, clearance calibration, capability declaration, citizen ledger.
+- `.github/workflows/shodann.yml` — live, two jobs, posts a comment on every PR to this repo.
+- `tests/` — 247 tests, including golden tests against the JS oracle and contract tests that read the workflow YAML as text.
+- `design_docs/growth-velocity.js` — the **reference oracle**, not the runtime. Kept so the port stays checkable. Do not extend it.
+- `design_docs/shodann-core.yml` — the historical 5-job draft. Never deployed, unsafe as written (see Landmines 1). Read it for the literal tool invocations; do not copy it.
 
 `README.md` is in-persona satire with no product content — never mine it for requirements.
+
+**`design_docs/EARLY_RUNS.md` is the highest-value file in the repo for a new session.** Nine defects found by running the system, every one of which the test suite was green through. Read it before trusting that a passing suite means the thing works.
 
 ### Source precedence when documents disagree
 
 **Executable code > `design_docs/` > `prompts/` > `design_docs/shodann-architecture-prototype/` > README.**
 
-They disagree constantly (see Landmines). `design_docs/README.md` sets the last rule itself: files directly in `design_docs/` are current; anything under `shodann-architecture-prototype/` is historical, corroborating only. Prose restatements of the velocity formula in `PRD.md` and `SHODANN_CLAUDE.md` are all partial — only `calculateCompositeScore` is authoritative.
+They disagree constantly (see Landmines). `design_docs/README.md` sets the last rule itself: files directly in `design_docs/` are current; anything under `shodann-architecture-prototype/` is historical, corroborating only. Prose restatements of the velocity formula in `PRD.md` and `SHODANN_CLAUDE.md` are all partial.
+
+Since the port, **`src/shodann/` outranks everything**, including `growth-velocity.js`. The JS is the oracle the Python is *checked against*, not the source of truth about current behaviour — the two have deliberately diverged where the JS was wrong (Landmine 5) and where PRD invariants demanded it.
 
 ### Language: Python (decided 2026-07-25)
 
@@ -42,24 +49,40 @@ The open "Python vs JavaScript" issue is resolved in favor of **Python**. Ration
 
 ## Commands
 
-There is no build, no test suite, no linter, and no runtime manifest in this repo. Do not invent one. The only thing that runs:
+There is a venv at `.venv/`. On Windows the interpreter is `.venv/Scripts/python.exe`; the bare `python` on PATH is a different install with no dependencies.
 
 ```bash
-node design_docs/growth-velocity.js --help
+.venv/Scripts/python.exe -m pytest -q
 ```
 
-Actions are `velocity` (default), `leaderboard`, `prompt` via `-a`. Non-obvious behavior:
+```bash
+.venv/Scripts/ruff.exe check .
+```
 
-- `velocity` and `prompt` **write** `.shodann/citizens/{user}.json` as a side effect; they are not read-only.
-- `CONFIG.paths` are relative to the process CWD, not the script — run it from the repo root or it silently creates `.shodann/` and `METRICS.md` in the wrong place.
-- `-a leaderboard` exits 1 until `.shodann/citizens/` exists, which is always, today.
-- No fixture for `--current metrics.json` exists anywhere. Hand-author one with these keys: `coverage, testCount, complexity, loc, functions, docstrings, lintIssues, syntaxErrors`.
+One test: `-m pytest tests/test_review.py::test_name`. Both must be clean before a PR.
 
-Tool commands in the specs run against the *student's* repo, not this one: `python -m py_compile`, `flake8 --max-line-length=100`, `pytest --cov=. --cov-report=term-missing`, `radon cc . -a -s`, and `bandit -r . -ll` (RAGE STATE only). The LLM step is `google-github-actions/run-gemini-cli@main` — both `shodann-core.yml:482` and `PRD.md:268` drop the `-cli` and name a nonexistent action; only the three prototype workflows have it right.
+**Rendering a review is a distinct check from testing one, and it has found what tests could not.** Two of the nine entries in `EARLY_RUNS.md` came from printing the comment and reading it — including a comment whose two sections contradicted each other about coverage while 243 tests passed. Compose one with `shodann.review.review(event, root=..., config=LLMConfig())` (no model configured ⇒ the REDUCED ALLOCATION path) and read the output. On Windows set `PYTHONIOENCODING=utf-8` or the emoji crash the console.
 
-## Architecture: the 5-job pipeline
+Watching a live run: `gh` is not on PATH here — it is `"/c/Program Files/GitHub CLI/gh.exe"`.
 
-One workflow on PR `opened`/`synchronize`/`reopened`. Jobs in `shodann-core.yml`: `shodann-initialize` → `shodann-hard-analysis` → `shodann-velocity` → `shodann-synthesis` → `shodann-metrics` (only the last has `if: always()`).
+Tool commands in the specs run against the *student's* repo, not this one: `python -m py_compile`, `pytest --cov=. --cov-report=json`, `ruff check . --output-format=json`, and `bandit -r . -ll` (RAGE STATE only). `flake8` and `radon` appear throughout the specs and are superseded — see the toolchain freeze above.
+
+## Architecture: what ships, and the 5-job design it came from
+
+**Shipped** (`.github/workflows/shodann.yml`), two jobs on `opened`/`synchronize`/`reopened`/`closed`:
+
+| Job | Holds | Does |
+|---|---|---|
+| `analyse` | `contents: read`, **no secrets** | runs the citizen's pytest and ruff, uploads `coverage.json` + `ruff.json` as an artifact |
+| `review` | `contents: write`, `pull-requests: write`, the model key | downloads the artifact, composes the comment, posts it; writes the ledger **on merge only** |
+
+**That split is the security property**, and it is why coverage waited until season two: measuring coverage means running untrusted code, and running untrusted code must not happen next to a write token. Do not merge these jobs, and do not add a step that executes citizen code to `review`. `tests/test_workflow_contract.py` fails if you do.
+
+Two other rules the workflow encodes, both learned the hard way (`EARLY_RUNS.md` 7, 8):
+- A review runs on every push and **writes no state** (`--dry-run`). The ledger is written once, on merge, against the base branch. Writing it per-push made SHODANN conflict with its own PRs.
+- Checkout takes `head.ref` normally and `base.ref` on close, because the head branch is usually already deleted by the time the closed event arrives.
+
+**Design, never deployed** — `shodann-core.yml`: `shodann-initialize` → `shodann-hard-analysis` → `shodann-velocity` → `shodann-synthesis` → `shodann-metrics` (only the last has `if: always()`).
 
 | Job | Reads | Emits |
 |---|---|---|
@@ -153,6 +176,13 @@ Knobs: `RAGE_LOTTERY_PERCENTAGE "10"`, `RAGE_TRIGGER_KEYWORDS`, `RAGE_FULL_SCAN_
 
 ## Landmines — read before writing implementation code
 
+These were written against the specs, before the port. **3, 5, 6, 7 and 9 are resolved in `src/shodann/` and the shipped workflow** — they are kept because `design_docs/` still carries the defective versions and a fresh reading of those files will re-derive them. 1, 2, 4, 8 and 10 still bite.
+
+Two more, learned from running it:
+
+- **A green suite proves very little here.** Nine defects in `EARLY_RUNS.md`, all found by running the system, all with the suite passing — including three that were contracts *between the workflow YAML and the program*, which no test could see until `tests/test_workflow_contract.py` started reading the YAML as text.
+- **Absent is not zero, everywhere.** An unmeasured coverage reading and a measured 0% are different facts, and collapsing them produced both a fabricated 98-point celebration and a −405 score for a citizen whose analysis job merely died. `AnalysisReports.coverage`, `CitizenRecord.coverage_instrumented` and `reconcile_coverage` exist to keep them apart; a delta is only claimed when both sides were measured. A *measured* zero is untouched — 0 → 30 is US-1.3's flagship case.
+
 1. **`shodann-core.yml` is unsafe to copy as-is.** Line 131 interpolates `PR_BODY="${{ github.event.pull_request.body }}"` straight into a `run:` block, and the PR title goes into the Gemini prompt at line 511. A student-authored body containing `$(…)` or backticks executes shell on a runner holding `contents: write`, `pull-requests: write`, and `GEMINI_API_KEY`. Move every student-controlled field into an `env:` mapping and reference it as `"$PR_BODY"`.
 2. **Never accept a fork PR into this design** (resolved 2026-07-25 — topology is org-owned public repos, one per student, branch PRs, plain `pull_request` trigger). Forks withhold secrets and issue a read-only token, which disables the LLM call, the comment, and persistence simultaneously. Because same-repo branch PRs are the shape, `pull_request_target` is never needed — which also keeps us clear of the `actions/checkout` v7 restriction on fork heads (enforced 2026-07-20; the opt-out is named `allow-unsafe-pr-checkout`). Persistence still checks out the *base* repo only and takes analysis results as artifacts. Public repos add free CodeQL/Dependabot/secret scanning as a Security-tab signal — never as a data source for the comment.
 3. **Cross-job transport is unsolved.** Reports cross job boundaries through `$GITHUB_OUTPUT` heredocs; any flake8/pytest/bandit output containing a bare `EOF` line terminates the delimiter early, and job outputs are size-capped. Use `actions/upload-artifact` or collapse jobs.
@@ -168,6 +198,15 @@ Knobs: `RAGE_LOTTERY_PERCENTAGE "10"`, `RAGE_TRIGGER_KEYWORDS`, `RAGE_FULL_SCAN_
 
 | Question | File |
 |---|---|
+| **What broke when it ran, and why** | `design_docs/EARLY_RUNS.md` |
+| Velocity math as shipped, guards, US-1.3 | `src/shodann/velocity.py` |
+| Citizen ledger, clearance names, atomic writes | `src/shodann/state.py` |
+| Output contract per mode, clearance overrides, forbidden vocabulary | `src/shodann/validator.py` |
+| Orchestration, degradation, coverage reconciliation | `src/shodann/review.py` |
+| Reading tool reports; why nothing here runs a tool | `src/shodann/analysis.py` |
+| Clearance postures (teaches → mentors → reports) | `design_docs/CLEARANCE_REGISTER.md` |
+| Leaderboard partition: human vs agent, ORANGE gate | `design_docs/LEADERBOARD.md` |
+| The agent fleet, its three epistemic positions | `.claude/agents/README.md` |
 | Scope, out-of-scope, Gherkin acceptance criteria, error handling | `PRD.md` |
 | Pipeline rationale, hard/soft split, integration points | `design_docs/SHODANN_CLAUDE.md` |
 | Voice: vocabulary, forbidden phrases, emoji sets, clearance buckets | `design_docs/SHODANN_VOICE_GUIDE.md` |
@@ -185,7 +224,7 @@ Work flows through GitHub issues; issue state is not in the repo, so **confirm p
 
 One live issue per piece of work. The board previously carried two waves of the same six issues (#1–#8 re-filed as #9–#14), which is how a single undecided question propagated `status: blocked` across three dependents and froze them for seven months. If an issue is superseded, close it pointing at the replacement.
 
-Branch → PR → review is convention only: there is no CI, no branch protection, no CODEOWNERS, and nothing enforces it. `.github/PULL_REQUEST_TEMPLATE.md` requires a 9-item pre-merge checklist plus an Educational Impact Assessment whose Pedagogical Alignment boxes encode the product invariants (growth-positive framing, clearance-appropriate, persona-consistent, velocity-over-position, no negative learning impact); non-student-facing PRs tick "Not student-facing" rather than leaving them blank.
+Branch → PR → review is convention only: there is no branch protection, no CODEOWNERS, and nothing enforces it. There *is* CI now — SHODANN reviews every PR to this repo, including its own. It posts a comment; it does not gate a merge. `.github/PULL_REQUEST_TEMPLATE.md` requires a 9-item pre-merge checklist plus an Educational Impact Assessment whose Pedagogical Alignment boxes encode the product invariants (growth-positive framing, clearance-appropriate, persona-consistent, velocity-over-position, no negative learning impact); non-student-facing PRs tick "Not student-facing" rather than leaving them blank.
 
 ## Permanently out of scope
 
