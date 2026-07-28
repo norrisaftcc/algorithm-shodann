@@ -82,7 +82,14 @@ jobs:
           python-version: '3.12'
 
       - name: Install the frozen toolchain
-        run: pip install --quiet "ruff==0.16.0" pytest pytest-cov
+        # Every tool whose output reaches the velocity score carries an exact
+        # pin, and pytest-cov is the one that matters most: coverage is the
+        # 2.0-weighted term, the largest in the composite. It ran unpinned
+        # beside an exactly pinned ruff, so a coverage.py release could move
+        # every citizen's heaviest input mid-cohort with nothing to show for
+        # it in the diff. pytest itself stays open - test count is read from
+        # source, never from a run.
+        run: pip install --quiet "ruff==0.16.0" "pytest-cov==7.1.0" pytest
 
       - name: Install the submission
         # A citizen's project may or may not be installable. Neither outcome
@@ -99,7 +106,29 @@ jobs:
         # and the lint delta feeds the velocity score through the sqrt term -
         # so a student could raise their own velocity by editing their
         # pyproject.toml. Rule selection is a score input, not a preference.
-        run: ruff check . --isolated --output-format=json > ruff.json || true
+        #
+        # C90 has to be asked for, and asked for this way. --isolated discards
+        # the citizen's configuration and ours alike, and C901 is not in
+        # ruff's default set: run isolated against a function with twelve
+        # branches and it reports nothing at all. So the complexity metric PRD
+        # section 8 names was unreachable from the moment --isolated shipped,
+        # whatever any pyproject.toml said.
+        #
+        # --extend-select, never a bare --select. Replacing the default set
+        # would move `lint_issues`, which is a frozen score input feeding the
+        # sqrt term - on this repository a full explicit selection swung it
+        # from 19 to 0 in one direction and to 492 in the other. Extending
+        # leaves every existing count untouched and adds exactly one rule.
+        # Adding a signal is permitted mid-cohort; changing one is not.
+        #
+        # The threshold is set here rather than read from anywhere, for the
+        # same reason as --isolated: what counts as a violation is a score
+        # input, not a preference of the repository being measured.
+        run: >-
+          ruff check . --isolated
+          --extend-select C90
+          --config "lint.mccabe.max-complexity=10"
+          --output-format=json > ruff.json || true
 
       - name: Tests and coverage
         # Failing tests are data, not a broken job. A citizen whose suite is
