@@ -84,7 +84,7 @@ def run(argv: list[str | Path], *, label: str) -> int:
     return completed.returncode
 
 
-def bootstrap(*, quiet: bool = False) -> int:
+def bootstrap() -> int:
     """Create the venv if it is absent and install the project into it.
 
     Idempotent on purpose: `test` and `check` call this rather than failing
@@ -94,8 +94,6 @@ def bootstrap(*, quiet: bool = False) -> int:
     if not venv_python().exists():
         sys.stderr.write(f"--> creating {VENV.relative_to(ROOT)}\n")
         venv.EnvBuilder(with_pip=True, upgrade_deps=False).create(VENV)
-    elif quiet:
-        return 0
 
     return run(
         [venv_python(), "-m", "pip", "install", "--quiet", "--editable", ".[dev]"],
@@ -156,6 +154,8 @@ def cmd_render(_: argparse.Namespace, extra: list[str]) -> int:
 
 def cmd_all(args: argparse.Namespace, extra: list[str]) -> int:
     del extra
+    # Fails fast on purpose: a broken test run is reason enough to stop, and
+    # `check`'s exit code would otherwise be masked by whichever ran last.
     return cmd_test(args, []) or cmd_check(args, [])
 
 
