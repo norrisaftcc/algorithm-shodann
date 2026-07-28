@@ -206,3 +206,10 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .DS_Store
+
+# Claude Code session state
+#   Generated per session and machine-specific. `.claude/launch.json` was
+#   tracked for months carrying an absolute C:/Users/... path and a stale
+#   session id, which is dead weight on every other machine. Agents, skills
+#   and settings under .claude/ are project config and stay tracked.
+.claude/launch.json

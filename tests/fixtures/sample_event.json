@@ -1,0 +1,21 @@
+{
+  "action": "opened",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "title": "Add tests for the report parser",
+    "user": {
+      "login": "octocat"
+    },
+    "changed_files": 3,
+    "additions": 124,
+    "deletions": 18,
+    "commits": 4,
+    "head": {
+      "ref": "feature/parser-tests"
+    },
+    "base": {
+      "ref": "main"
+    }
+  }
+}
