@@ -10,13 +10,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `src/shodann/` — the implementation. Velocity engine, prompt assembly, output validator, groundedness probe, clearance calibration, capability declaration, citizen ledger.
 - `.github/workflows/shodann.yml` — live, two jobs, posts a comment on every PR to this repo.
-- `tests/` — 247 tests, including golden tests against the JS oracle and contract tests that read the workflow YAML as text.
+- `tests/` — 249 tests, including golden tests against the JS oracle and contract tests that read the workflow YAML as text.
+- `design_docs/sprints/2026-07-28/` — one sprint, documented end to end: `01-candidates.md` (37 surveyed items, the live backlog), `02-prediction.md`, `03-treatment.md`, `04-retro.md`, `05-assay.md`.
+- `.claude/skills/the-algorithm/` — a vendored discipline, pinned by commit. **Never edited here.** See `design_docs/addenda/the-algorithm.md`.
 - `design_docs/growth-velocity.js` — the **reference oracle**, not the runtime. Kept so the port stays checkable. Do not extend it.
 - `design_docs/shodann-core.yml` — the historical 5-job draft. Never deployed, unsafe as written (see Landmines 1). Read it for the literal tool invocations; do not copy it.
 
 `README.md` is in-persona satire with no product content — never mine it for requirements.
 
-**`design_docs/EARLY_RUNS.md` is the highest-value file in the repo for a new session.** Nine defects found by running the system, every one of which the test suite was green through. Read it before trusting that a passing suite means the thing works.
+**`design_docs/EARLY_RUNS.md` is the highest-value file in the repo for a new session.** Eleven defects found by running the system, every one of which the test suite was green through. Read it before trusting that a passing suite means the thing works.
+
+**Addenda live in `design_docs/addenda/` and are linked from here.** This file has almost no slack — an assay found 161 of 190 sentences load-bearing, so a reader who skims loses instructions rather than filler. Put detail in an addendum and name it here. An unlinked addendum does not exist.
+
+| Addendum | Read it before |
+|---|---|
+| `design_docs/addenda/the-algorithm.md` | writing any plan or document a later session will act on |
 
 ### Source precedence when documents disagree
 
@@ -178,9 +186,12 @@ Knobs: `RAGE_LOTTERY_PERCENTAGE "10"`, `RAGE_TRIGGER_KEYWORDS`, `RAGE_FULL_SCAN_
 
 These were written against the specs, before the port. **3, 5, 6, 7 and 9 are resolved in `src/shodann/` and the shipped workflow** — they are kept because `design_docs/` still carries the defective versions and a fresh reading of those files will re-derive them. 1, 2, 4, 8 and 10 still bite.
 
-Two more, learned from running it:
+Four more, learned from running it:
 
-- **A green suite proves very little here.** Nine defects in `EARLY_RUNS.md`, all found by running the system, all with the suite passing — including three that were contracts *between the workflow YAML and the program*, which no test could see until `tests/test_workflow_contract.py` started reading the YAML as text.
+- **A green suite proves very little here.** Eleven defects in `EARLY_RUNS.md`, all found by running the system, all with the suite passing — including three that were contracts *between the workflow YAML and the program*, which no test could see until `tests/test_workflow_contract.py` started reading the YAML as text.
+- **Anything feeding the score must not be choosable by the citizen being scored.** `--cov=.` counted a student's own test files in the coverage denominator, and `ruff check` without `--isolated` let their `pyproject.toml` decide which rules were counted. Both were live; both are now asserted in `tests/test_workflow_contract.py`. This is the lines-of-code metric in a new unit — check any new signal against it before adding one.
+- **The freeze is a deadline, not a preference.** `PRD.md` §8 freezes the measurement set for cohort 1, so a defect in a *measurement* is free to fix today and impossible after the first real submission — fixing it later invalidates every student's history. Adding a signal stays legal mid-cohort; changing or removing one does not. Sort measurement work by that clock, not by value.
+- **The break-character rule is buried in both documents that carry it** — `design_docs/SHODANN_CLAUDE.md` at sentence 115 of 165 in a subordinate clause, `design_docs/SHODANN_VOICE_GUIDE.md` at 157 of 160. It governs student distress, academic integrity and accessibility, and a model assembling a prompt reads 150 lines of persona enthusiasm before reaching it. **Unfixed**; see `design_docs/addenda/the-algorithm.md`.
 - **Absent is not zero, everywhere.** An unmeasured coverage reading and a measured 0% are different facts, and collapsing them produced both a fabricated 98-point celebration and a −405 score for a citizen whose analysis job merely died. `AnalysisReports.coverage`, `CitizenRecord.coverage_instrumented` and `reconcile_coverage` exist to keep them apart; a delta is only claimed when both sides were measured. A *measured* zero is untouched — 0 → 30 is US-1.3's flagship case.
 
 1. **`shodann-core.yml` is unsafe to copy as-is.** Line 131 interpolates `PR_BODY="${{ github.event.pull_request.body }}"` straight into a `run:` block, and the PR title goes into the Gemini prompt at line 511. A student-authored body containing `$(…)` or backticks executes shell on a runner holding `contents: write`, `pull-requests: write`, and `GEMINI_API_KEY`. Move every student-controlled field into an `env:` mapping and reference it as `"$PR_BODY"`.
@@ -199,6 +210,9 @@ Two more, learned from running it:
 | Question | File |
 |---|---|
 | **What broke when it ran, and why** | `design_docs/EARLY_RUNS.md` |
+| **The live backlog — 37 surveyed items** | `design_docs/sprints/2026-07-28/01-candidates.md` |
+| How this repo negotiates, and the floor test | `design_docs/addenda/the-algorithm.md` |
+| Which documents are below floor, and where their operative sentences sit | `design_docs/sprints/2026-07-28/05-assay.md` |
 | Velocity math as shipped, guards, US-1.3 | `src/shodann/velocity.py` |
 | Citizen ledger, clearance names, atomic writes | `src/shodann/state.py` |
 | Output contract per mode, clearance overrides, forbidden vocabulary | `src/shodann/validator.py` |

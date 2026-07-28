@@ -185,11 +185,50 @@ The same defect ran the other way and was worse: a citizen at 91.2% whose analys
 
 ---
 
+## 10. The citizen could raise their own velocity
+
+**Where:** a five-agent survey of the repository, 2026-07-28. Neither defect is in any Python file; both are two lines of workflow that no scope had reason to read together.
+
+**What was wrong:** the analysis job ran `pytest --cov=.` with no coverage configuration, so the *citizen's own test files* entered the coverage denominator. Test modules execute end to end, so they join the average at roughly 100%. Coverage is the 2.0-weighted term, the largest in the score. **A student raised their velocity by adding a test file that asserts nothing.**
+
+The same job ran `ruff check .` without `--isolated`, so ruff resolved configuration from the repository being analysed. The lint delta feeds the score through the `sqrt` term, which makes rule selection a score input rather than a style preference — and made lint counts incomparable between citizens.
+
+**Why it matters more than it reads:** this is the lines-of-code metric wearing a different unit. Measure LOC, get verbose code. Measure coverage without scoping it, get empty test files. A *rate* metric is easier to game than a position metric, because a citizen only has to move, not to be good — holding 90% honestly is work, adding one assertion-free file is thirty seconds.
+
+**The clock:** `PRD.md` §8 freezes the measurement set for cohort 1, because changing a measurement resets every baseline. Both were **free to fix that day and impossible a month later** — after the first real submission, correcting them means invalidating every student's history.
+
+**What changed:** `--cov=src` with a fallback for flat layouts, `ruff check --isolated`, and both asserted in `tests/test_workflow_contract.py`. The coverage test failed on its first run against the comment explaining why `--cov=.` is wrong — correct behaviour from a crude string check, and the reason the assertion now reads only executable lines.
+
+---
+
+## 11. Two documents buried the sentence that protects a student in distress
+
+**Where:** eight blind readers ran an external floor test — ASSAY, from the vendored `the-algorithm` skill — against one document each. None knew what SHODANN is or that the others existed.
+
+**What they found**, independently, in the two documents that carry the rule:
+
+- `SHODANN_CLAUDE.md` — *"It's okay to break character"*, sentence **115 of 165**, in a **subordinate clause**.
+- `SHODANN_VOICE_GUIDE.md` — *"The satire serves learning. When it doesn't, set it aside."*, sentence **157 of 160**.
+
+That rule governs student distress, academic-integrity concerns, and accessibility accommodation. It is the highest-consequence sentence in the corpus, and both documents that carry it place it last and place it down. A model assembling a prompt reads roughly 150 lines of persona enthusiasm before reaching the clause that says stop performing.
+
+**The control that makes this trustworthy:** `README.md` was included deliberately as in-persona satire with no product content. It returned below floor at 2 of 7 sentences. Had it come back clean, every other result would have been void.
+
+**The finding nobody predicted:** we agreed in advance to discount `SHODANN_VOICE_GUIDE.md` as a false positive, on the grounds that a document prescribing smoothness will read as smooth. **It came back above floor** — the instrument did not confuse deliberate persona with manufactured agreeableness. What it found instead was that 18 of 190 sentences carry load, the lowest ratio in the corpus: the document expands where it is fun and stays thin where it constrains.
+
+**And on `PRD.md`**, a reader given no dates flagged `smoothness-confined-to-a-graft`: sections 1–7 contain no sentence anyone could object to, while the §8 block added eighteen months later holds *"the only sentences with cost."* It located the seam between the generated document and the argued one without being told either existed.
+
+**Status: unfixed.** Recorded because ASSAY never redrafts — acting on it is separate work.
+
+---
+
 ## What the pattern says
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
 
 Two of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that caught a comment disagreeing with itself.
+
+The last two needed a different move again: **reading with something withheld.** Entry 10 came from five surveyors who each saw one scope and could not see the others, plus a critic asked only what falls between them. Entry 11 came from readers who were given a document and denied any knowledge of what it was for. Every technique on this page works by removing context from the reader — running the system removes the author's knowledge of what it *should* do, and a blind read removes the reader's ability to supply what the document failed to say. A reviewer who knows the intent will unconsciously fill the gap and report that there wasn't one.
 
 The two agents caught different things and neither caught these: `oracle-warden` verifies what is checkable mechanically, `clive-prompt-warden` verifies what is consistent across documents. Neither can see what only appears when a real event payload meets a real runner.
 
