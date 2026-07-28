@@ -140,6 +140,28 @@ def _coverage_multiplier(previous_coverage: float, config: VelocityConfig) -> fl
     return 1.0 + config.first_test_bonus * headroom
 
 
+def _growth_delta(deltas: MetricDeltas, config: VelocityConfig) -> int:
+    """Which delta the "complexity growth" term actually means.
+
+    It means "how much code did you take on", and it always did - until C901
+    was measured, `complexity` and `functions` were the same `def ` count set
+    from one variable, so the term's label and its input never had to agree.
+    Now they do. `functions` is the honest one.
+
+    Reading `complexity` instead would be worse than a mislabel: a positive
+    delta in a C901 count means the citizen *added a function over the branch
+    threshold*, and this term would pay them for it.
+
+    Worth surfacing rather than quietly settling - unbounded growth in how
+    much code you took on is a signal, but probably not a good one. It is the
+    lines-of-code metric with a smaller coefficient, and the one-sided guard
+    around it is all that stops it penalising a citizen who deletes code. It
+    survives because PRD section 8 forbids removing a signal mid-cohort, not
+    because it earned its place. Revisit between cohorts.
+    """
+    return deltas.functions if config.complexity_growth_reads_functions else deltas.complexity
+
+
 def composite_score(
     deltas: MetricDeltas,
     iterations: int,
@@ -164,11 +186,12 @@ def composite_score(
     if iterations > 0:
         score += math.log2(iterations + 1) * weights.iteration_count * iterations
 
-    # Complexity only ever adds. Growing it alongside tests is healthy growth;
-    # growing it without tests earns a smaller credit, not a penalty.
-    if deltas.complexity > 0:
+    # Only ever adds. Growing alongside tests is healthy; growing without
+    # tests earns a smaller credit, never a penalty.
+    growth = _growth_delta(deltas, config)
+    if growth > 0:
         factor = 1.0 if deltas.test_count > 0 else config.untested_complexity_factor
-        score += deltas.complexity * weights.complexity_growth * factor
+        score += growth * weights.complexity_growth * factor
 
     score += deltas.docstrings * weights.documentation_delta
 
@@ -264,10 +287,17 @@ def _lint_note(deltas: MetricDeltas) -> Note:
     return ([], [])
 
 
-def _complexity_note(deltas: MetricDeltas) -> Note:
-    if deltas.complexity > 0 and deltas.test_count > 0:
+def _complexity_note(deltas: MetricDeltas, config: VelocityConfig) -> Note:
+    """Keyed on the same delta the score term is, for the same reason.
+
+    These sentences say "you took on more code", which is what a `def ` count
+    measures. Said about a C901 count they would congratulate a citizen for
+    writing a function with more branches than the threshold allows.
+    """
+    growth = _growth_delta(deltas, config)
+    if growth > 0 and deltas.test_count > 0:
         return (["Complexity growth backed by tests. Sustainable expansion."], [])
-    if deltas.complexity > 5 and deltas.test_count == 0:
+    if growth > 5 and deltas.test_count == 0:
         return ([], [
             "Complexity grew significantly. Consider adding tests to validate new logic."
         ])
@@ -295,7 +325,7 @@ def analyze_growth(
         _tests_note(deltas),
         _documentation_note(deltas, current),
         _lint_note(deltas),
-        _complexity_note(deltas),
+        _complexity_note(deltas, config),
     ]
 
     celebrations = [line for note in notes for line in note[0]]

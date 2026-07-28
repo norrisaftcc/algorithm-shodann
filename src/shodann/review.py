@@ -123,7 +123,18 @@ def collect_metrics(
     return CodeMetrics(
         coverage=reports.coverage or 0.0,
         test_count=tests,
-        complexity=functions,
+        # C901 violations, from the report - not the `def ` count this field
+        # used to hold. The two were the same number for every reading ever
+        # taken, which is why `pyproject.toml` could claim the ruff pin
+        # protected a complexity baseline that nothing computed.
+        #
+        # A measured 0 here is a real and good answer: no function exceeds the
+        # branch threshold. An absent report also reads 0, exactly as
+        # `lint_issues` beside it does - tolerable only because nothing keyed
+        # on this can fabricate a claim from a zero. The score no longer reads
+        # it, and `_complexity_note` fires on a positive delta, so silence is
+        # what an unmeasured cycle produces.
+        complexity=reports.complexity or 0,
         loc=loc,
         functions=functions,
         docstrings=docstrings,

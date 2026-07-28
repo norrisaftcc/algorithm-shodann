@@ -155,6 +155,46 @@ def test_the_bonus_is_worth_a_stated_number_of_points() -> None:
     assert from_zero.score - from_fifty.score == pytest.approx(10.0)
 
 
+# --- the growth term reads what it means ----------------------------------
+
+
+def test_the_growth_term_reads_functions_not_complexity() -> None:
+    """`complexity` now carries a C901 count, and this term must not read it.
+
+    A positive delta in a C901 count means the citizen added a function over
+    the branch threshold. Scored through `weights.complexity_growth` that
+    would pay them for it - a punitive signal inverted into a reward, which is
+    worse than the mislabel it replaced.
+
+    `functions` is what the term always meant: how much code you took on.
+    Until C901 was measured the two fields held the same `def ` count, so no
+    real citizen's score moves by any amount.
+    """
+    base = dict(coverage=50.0, test_count=4, loc=200, docstrings=3, lint_issues=2)
+    # Took on four more functions while cleaning every one over the threshold.
+    previous = metrics(complexity=6, functions=8, **base)
+    current = metrics(complexity=0, functions=12, **base)
+
+    result = calculate_velocity(current, previous, 1)
+
+    assert result.deltas.functions == 4
+    assert result.deltas.complexity == -6
+    # Credited for the four, and the guard keeps the -6 from ever subtracting.
+    assert result.score > calculate_velocity(previous, previous, 1).score
+
+
+def test_the_oracle_still_reads_complexity() -> None:
+    """The divergence is expressed as config, so the snapshot stays byte-exact.
+
+    `design_docs/growth-velocity.js` scored `complexity`, and the fixtures are
+    captured evidence from it - the only place the two fields ever differ. If
+    this flips, `tests/test_oracle_snapshot.py` fails for a reason that has
+    nothing to do with a transcription error, which is what it exists to find.
+    """
+    assert DEFAULT_CONFIG.complexity_growth_reads_functions is True
+    assert ORACLE_CONFIG.complexity_growth_reads_functions is False
+
+
 def test_first_test_emits_the_required_phrase() -> None:
     result = calculate_velocity(metrics(coverage=12.0, test_count=1), None, 1)
     assert any(FIRST_TESTS_PHRASE in line for line in result.celebrations)

@@ -23,9 +23,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 __all__ = [
+    "COMPLEXITY_RULE",
     "COVERAGE_REPORT",
     "LINT_REPORT",
     "AnalysisReports",
+    "read_complexity",
     "read_coverage",
     "read_lint_issues",
 ]
@@ -35,6 +37,17 @@ COVERAGE_REPORT = "coverage.json"
 
 LINT_REPORT = "ruff.json"
 """Written by `ruff check --output-format=json`."""
+
+COMPLEXITY_RULE = "C901"
+"""The one rule whose diagnostics are counted separately from the rest.
+
+PRD section 8 names C901 as SHODANN's complexity metric, replacing radon's
+Maintainability Index: "this function has 12 branches" is actionable, "your MI
+is 64" reads as a grade. Until this reader existed nothing anywhere consumed a
+C901 diagnostic - `collect_metrics` reported a count of `def ` under the name
+complexity - so the frozen ruff pin was protecting a number that was never
+computed.
+"""
 
 
 @dataclass(frozen=True)
@@ -49,6 +62,7 @@ class AnalysisReports:
 
     coverage: float | None = None
     lint_issues: int | None = None
+    complexity: int | None = None
     tests_passed: int | None = None
     tests_failed: int | None = None
 
@@ -61,9 +75,11 @@ class AnalysisReports:
         """Read whichever reports are present in ``directory``."""
         base = Path(directory)
         coverage, passed, failed = read_coverage(base / COVERAGE_REPORT)
+        lint_report = base / LINT_REPORT
         return cls(
             coverage=coverage,
-            lint_issues=read_lint_issues(base / LINT_REPORT),
+            lint_issues=read_lint_issues(lint_report),
+            complexity=read_complexity(lint_report),
             tests_passed=passed,
             tests_failed=failed,
         )
@@ -112,10 +128,41 @@ def read_lint_issues(path: Path | str) -> int | None:
     moved, never which rule they violated. Rule-level feedback belongs in the
     review's prose, where it can be explained.
     """
-    data = _load(path)
+    diagnostics = _diagnostics(_load(path))
+    return None if diagnostics is None else len(diagnostics)
+
+
+def _diagnostics(data) -> list | None:
+    """The diagnostic list, whichever shape ruff wrote it in."""
     if isinstance(data, list):
-        return len(data)
+        return data
     # Some ruff versions wrap diagnostics in an object.
     if isinstance(data, dict) and isinstance(data.get("diagnostics"), list):
-        return len(data["diagnostics"])
+        return data["diagnostics"]
     return None
+
+
+def read_complexity(path: Path | str) -> int | None:
+    """How many functions ruff found above the branch threshold.
+
+    This is a count of C901 *violations*, not total cyclomatic complexity.
+    ruff reports only what breaches `lint.mccabe.max-complexity`, so a
+    codebase of well-shaped functions reads 0 - which is the true and useful
+    answer, not a missing one. A citizen learns that no function is over the
+    line, or exactly how many are.
+
+    It does not feed the velocity score, deliberately. A positive delta here
+    means a citizen *added* an over-threshold function, and the growth term
+    would have paid them for it; see the note in `velocity.composite_score`.
+
+    ``None`` means ruff did not run or wrote something unreadable, which is
+    not the same as a clean codebase and must never be flattened into one.
+    """
+    diagnostics = _diagnostics(_load(path))
+    if diagnostics is None:
+        return None
+    return sum(
+        1
+        for item in diagnostics
+        if isinstance(item, dict) and item.get("code") == COMPLEXITY_RULE
+    )

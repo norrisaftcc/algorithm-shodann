@@ -100,6 +100,44 @@ def test_the_citizen_does_not_choose_which_lint_rules_count(workflow: str) -> No
     assert "--isolated" in style, "rule selection is a score input, not a preference"
 
 
+def test_isolating_ruff_does_not_also_discard_the_complexity_rule(workflow: str) -> None:
+    """--isolated throws away our configuration along with the citizen's.
+
+    C901 is not in ruff's default set: run it isolated against a function with
+    twelve branches and it reports nothing. So the complexity metric PRD
+    section 8 names was unreachable from the moment --isolated shipped,
+    whatever this repository's `select` said - and `pyproject.toml` claimed
+    the ruff pin was protecting a baseline that nothing computed.
+    """
+    style = workflow.split("Style and complexity")[1].split("- name:")[0]
+    run = "\n".join(
+        line for line in style.splitlines() if line.strip() and not line.strip().startswith("#")
+    )
+
+    assert "C90" in run, "C901 is the complexity metric; without it nothing is measured"
+    assert "max-complexity" in run, "the threshold decides what counts as a violation"
+
+
+def test_the_complexity_rule_is_added_without_replacing_the_lint_set(workflow: str) -> None:
+    """--extend-select, never a bare --select, and the distinction is a rescore.
+
+    `lint_issues` is a frozen score input feeding the sqrt term. Replacing
+    ruff's default selection rather than extending it moves that count: on
+    this repository an explicit `E4,E7,E9,F,C90` took it from 19 to 0, and the
+    full house rule set took it to 492 - mostly S101, one per assert, so every
+    citizen who wrote a test would have watched their lint reading get worse.
+
+    Adding a signal is permitted mid-cohort. Changing one is not.
+    """
+    style = workflow.split("Style and complexity")[1].split("- name:")[0]
+    run = "\n".join(
+        line for line in style.splitlines() if line.strip() and not line.strip().startswith("#")
+    )
+
+    assert "--extend-select" in run, "extending adds C901; selecting would rewrite the lint term"
+    assert "--select " not in run, "a bare --select silently rescores every citizen's lint delta"
+
+
 def test_every_score_feeding_tool_is_pinned_exactly(workflow: str) -> None:
     """An open version bound on a measurement tool is an unannounced rescore.
 
