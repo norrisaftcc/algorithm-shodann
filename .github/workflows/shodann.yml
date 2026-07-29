@@ -356,13 +356,35 @@ jobs:
             --out /tmp/shodann-record.md \
             --root . \
             --reports shodann-reports
-          if [ -z "$(git status --porcelain .shodann)" ]; then
+
+          # S1-12. `leaderboard.py` was complete and tested from the day it was
+          # written and no caller ever wrote its output anywhere - the single
+          # instructor-facing deliverable in the MVP had no producer, and the
+          # only way to see it was to run the CLI by hand and read stdout.
+          #
+          # Regenerated here rather than on a schedule because here is the only
+          # moment it can change: METRICS.md is derived entirely from the
+          # citizen ledgers, and the ledgers change on merge and at no other
+          # time. A cron job over one repository would rewrite an identical
+          # file on a timer. It also shares this step's commit and push, so the
+          # board cannot drift out of step with the ledger it mirrors and no
+          # second writer races the first.
+          #
+          # PRD:446 describes a scheduled job in the *course* repository reading
+          # across student repositories. That is a different artifact and it is
+          # blocked: `render_prompt` resolves `prompts/` against the process
+          # working directory, so SHODANN cannot yet stand in one repository and
+          # read another (issue #51). This is the same board for one repository,
+          # which is what the shipped topology supports today.
+          python -m shodann.cli --action leaderboard --root . --out METRICS.md
+
+          if [ -z "$(git status --porcelain .shodann METRICS.md)" ]; then
             echo "No ledger change to record."
             exit 0
           fi
           git config user.name  "shodann[bot]"
           git config user.email "shodann[bot]@users.noreply.github.com"
-          git add .shodann
+          git add .shodann METRICS.md
           git commit -m "Record velocity for @${CITIZEN}"
 
           # The concurrency group at the top of this file is keyed on the pull

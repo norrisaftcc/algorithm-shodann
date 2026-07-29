@@ -160,3 +160,21 @@ def test_emoji_output_survives_a_non_utf8_console(tmp_path) -> None:
     assert completed.returncode == 0, completed.stderr.decode("utf-8", "replace")
     assert "UnicodeEncodeError" not in completed.stderr.decode("utf-8", "replace")
     assert "\U0001f4c8".encode() in completed.stdout
+
+
+def test_the_leaderboard_can_be_written_to_a_file(tmp_path) -> None:
+    """S1-12. The producer. `--action leaderboard` could only ever print.
+
+    stdout is not an artifact an instructor finds, and the workflow that would
+    have redirected it did not exist - so `leaderboard.py` was complete, tested
+    and unreachable for the whole life of the project. Writing goes through
+    `state.atomic_write` for the same reason the ledger does: a killed job must
+    not leave half a board for someone to read as a whole one.
+    """
+    out = tmp_path / "METRICS.md"
+
+    assert main(["--action", "leaderboard", "--root", str(tmp_path), "--out", str(out)]) == 0
+
+    board = out.read_text(encoding="utf-8")
+    assert "SHODANN Growth Velocity Leaderboard" in board
+    assert "Last Updated" in board, "an undated mirror cannot be told from a stale one"

@@ -361,3 +361,41 @@ def test_a_lost_ledger_push_warns_instead_of_failing_the_students_check(workflow
     assert "::warning::" in run, "the maintainer still has to be told"
     assert "exit 1" not in run, "our race is not the citizen's failure"
     assert run.rstrip().endswith("exit 0"), "exhausting the retries must not fail the job"
+
+
+def test_metrics_md_has_a_producer(workflow: str) -> None:
+    """S1-12. `leaderboard.py` shipped complete, tested, and never called.
+
+    The single instructor-facing deliverable in the MVP had no producer for the
+    whole life of the project: `cli.py` could print a board to stdout and no
+    workflow ran it, so `METRICS.md` existed only in `PRD.md` US-3.2 and in the
+    docstring of the module that would have written it. A feature that is
+    finished everywhere except at the point where a human meets it is not
+    finished, and no test could see this one because there was nothing to test
+    - the gap was the absence of a call.
+    """
+    step = _ledger_step(workflow)
+
+    assert "--action leaderboard" in step, "nothing regenerates the board"
+    assert "--out METRICS.md" in step
+    assert "git add .shodann METRICS.md" in step, "generated and then never committed"
+
+
+def test_the_board_is_committed_with_the_ledger_it_mirrors(workflow: str) -> None:
+    """One commit, one push, one moment - because the board is derived.
+
+    METRICS.md is a pure function of the citizen ledgers, so a second writer on
+    a different schedule can only ever produce a board that disagrees with the
+    records it claims to summarise, and would race this step's push besides.
+    The change-detection guard has to cover both paths or a run that moves only
+    the board exits early and drops it.
+    """
+    step = _ledger_step(workflow)
+
+    assert "git status --porcelain .shodann METRICS.md" in step, (
+        "a board-only change would exit early and never be committed"
+    )
+    assert step.index("--out METRICS.md") < step.index("git status --porcelain"), (
+        "the board must be regenerated before change detection reads it"
+    )
+    assert workflow.count("--action leaderboard") == 1, "one producer, or they race"

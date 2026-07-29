@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .leaderboard import generate_leaderboard
 from .prompt_section import generate_prompt_section
-from .state import load_citizen_history, save_citizen_history
+from .state import atomic_write, load_citizen_history, save_citizen_history, utcnow
 from .velocity import CodeMetrics, calculate_velocity
 
 __all__ = ["main"]
@@ -123,6 +123,8 @@ def build_parser() -> argparse.ArgumentParser:
                         default=None,
                         help="state whether --current's coverage figure was measured; "
                              "default: inferred from whether the file carries a coverage key")
+    parser.add_argument("--out", help="write the leaderboard here instead of stdout "
+                                      "(--action leaderboard only)")
     return parser
 
 
@@ -131,7 +133,23 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.action == "leaderboard":
-        sys.stdout.write(generate_leaderboard(args.root) + "\n")
+        # The human board, and only the human board. `generate_leaderboard`
+        # takes a `kind` and this deliberately does not expose it: the agent
+        # and mixed views are gated at ORANGE on the *viewer*, and a file
+        # committed to a public repository has no viewer to gate. Writing
+        # either one to disk would defeat the clearance check by removing the
+        # thing it checks. They stay stdout-only, where a caller can pass
+        # `viewer_clearance` - see design_docs/LEADERBOARD.md, which also
+        # reserves the name METRICS.md for the citizen board specifically.
+        board = generate_leaderboard(args.root, generated_at=utcnow()) + "\n"
+        if args.out:
+            # Atomic, like every other write in this project: a killed job must
+            # not leave a half-written leaderboard for an instructor to read.
+            path = Path(args.out)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write(path, board)
+        else:
+            sys.stdout.write(board)
         return 0
 
     if not args.citizen or not args.current:

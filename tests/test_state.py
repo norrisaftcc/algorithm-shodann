@@ -14,8 +14,10 @@ from shodann.state import (
     TREND_ASCENDING,
     TREND_NEW,
     VISIBILITY_ANONYMOUS,
+    VISIBILITY_NAMED,
     CitizenRecord,
     Display,
+    assigned_handle,
     citizen_path,
     compute_trend,
     load_citizen_history,
@@ -132,8 +134,57 @@ def test_anonymous_citizens_are_never_named() -> None:
     assert "realname" not in display.label("realname")
 
 
-def test_named_is_the_stated_default_and_still_explicit() -> None:
-    assert Display().label("octocat") == "@octocat"
+def test_nobody_is_conscripted_into_a_public_ranking(tmp_path) -> None:
+    """S1-14. This test asserted `Display().label(...) == "@octocat"`.
+
+    It was green, and it was pinning the defect. `PRD.md`:448 - "nobody is
+    conscripted into a public ranking of their coursework" - and the `Display`
+    docstring - "opt-in by name, never by default" - both said the opposite of
+    the field beneath them, and the test agreed with the field. Nothing
+    prompts a citizen to open their ledger, so the default *was* the policy for
+    every citizen who ever existed.
+
+    Latent until S1-12 built the thing that publishes. Asserted end to end
+    through a real save rather than on `Display` alone, because the defect was
+    never in the dataclass in isolation - it was in what a review writes for a
+    citizen who never chose.
+    """
+    submit(tmp_path, citizen="octocat")
+    record = load_citizen_history("octocat", tmp_path)
+
+    assert record.display.visibility == VISIBILITY_ANONYMOUS
+    assert record.display.label("octocat") == assigned_handle("octocat")
+    assert "octocat" not in record.display.label("octocat")
+
+
+def test_choosing_to_be_named_still_works_and_survives_a_reload(tmp_path) -> None:
+    """Opt-in has to be reachable, or the default is not a default but a wall."""
+    path = citizen_path("loud", tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"citizen": "loud", "display": {"visibility": VISIBILITY_NAMED}}),
+        encoding="utf-8",
+    )
+
+    assert load_citizen_history("loud", tmp_path).display.label("loud") == "@loud"
+
+    submit(tmp_path, citizen="loud")
+    assert load_citizen_history("loud", tmp_path).display.visibility == VISIBILITY_NAMED, (
+        "a stored choice must survive the write that follows it"
+    )
+
+
+def test_assigned_handles_are_stable_and_distinct() -> None:
+    """US-3.2 requires every citizen to appear, which a constant string defeats.
+
+    "Citizen-Anonymous" listed eleven times has shown one citizen eleven times.
+    Stability matters for the same reason: a handle that moved between runs
+    would make a citizen's own row untrackable to them, which is the one reader
+    the row exists for.
+    """
+    assert assigned_handle("octocat") == assigned_handle("octocat")
+    assert assigned_handle("octocat") != assigned_handle("octodog")
+    assert "octocat" not in assigned_handle("octocat")
 
 
 # -- S1-15: a ledger we cannot read is not a ledger we may destroy -----------
@@ -244,7 +295,7 @@ def test_a_failed_quarantine_still_writes_the_ledger(tmp_path, monkeypatch) -> N
     def refuse(self, target):
         raise OSError("read-only file system")
 
-    # `Path.replace` is quarantine's move; `_atomic_write` uses `os.replace`,
+    # `Path.replace` is quarantine's move; `atomic_write` uses `os.replace`,
     # so the write under test is untouched by this patch.
     monkeypatch.setattr(Path, "replace", refuse)
 

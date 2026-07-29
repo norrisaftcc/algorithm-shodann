@@ -20,6 +20,7 @@ record it degraded away from.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -41,11 +42,14 @@ __all__ = [
     "SCHEMA_VERSION",
     "CitizenRecord",
     "Display",
+    "assigned_handle",
+    "atomic_write",
     "citizen_path",
     "load_citizen_history",
     "quarantine_dir",
     "read_clearance",
     "save_citizen_history",
+    "utcnow",
 ]
 # Still omits seven names that four modules import, including `clearance_name`
 # - S1-26 in the sprint backlog. Left alone rather than fixed in passing.
@@ -163,21 +167,67 @@ VISIBILITY_NAMED = "named"
 VISIBILITY_ANONYMOUS = "anonymous"
 
 
-def _utcnow() -> str:
+def utcnow() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def assigned_handle(citizen: str) -> str:
+    """A stable stand-in name for a citizen who has not chosen to be named.
+
+    `PRD.md`:448 offers two ways to appear - "under their GitHub username or an
+    assigned handle" - and until an instructor assigns one, something has to
+    fill the second slot. The obvious filler does not work: a constant string
+    makes every unnamed citizen render identically, which collides with US-3.2's
+    requirement that *all* citizens appear. A board listing "Citizen-Anonymous"
+    eleven times has not shown eleven citizens.
+
+    Derived from the username so it is stable without being stored. A citizen
+    who opts out and back in gets the same handle both times, their row keeps
+    its identity across runs, and no migration is needed for records written
+    before this existed.
+
+    This is pseudonymity, not anonymity, and the difference matters enough to
+    write down. A course roster is a small domain, so anyone holding the list
+    of usernames can recover the mapping by trying them all - which is minutes
+    of work, not a research project. What it defends against is the thing that
+    actually happens: a public repository indexed by a search engine, tying a
+    named person to a ranking of their coursework, forever, for a class they
+    took once. Nobody with the roster is learning anything they did not know.
+    """
+    digest = hashlib.sha256(citizen.encode("utf-8")).hexdigest()[:6].upper()
+    return f"Citizen-{digest}"
 
 
 @dataclass
 class Display:
-    """Leaderboard participation. Opt-in by name, never by default."""
+    """Leaderboard participation. Opt-in by name, never by default.
 
-    visibility: str = VISIBILITY_NAMED
+    That sentence was here before the field beneath it agreed with it. The
+    default was `named`, so a citizen who never opened this file - which is
+    every citizen, since nothing prompts them to - was published on a public
+    leaderboard under their GitHub username, and opting out meant hand-editing
+    JSON they did not know existed. `PRD.md`:448 is unambiguous: "nobody is
+    conscripted into a public ranking of their coursework." The code disagreed
+    with the PRD and with its own docstring, and the docstring lost.
+
+    It was harmless only because nothing published. S1-12 built the publisher,
+    which is what made this worth fixing in the same change rather than after
+    it - a defect that is latent until one specific commit lands should be
+    fixed by that commit.
+
+    Records written before this change carry `visibility: "named"` explicitly,
+    and `from_dict` keeps what it finds, so the flip does not retroactively
+    anonymise anyone. There is exactly one such record and it is the author's.
+    Any student ledger created from here on defaults to a handle.
+    """
+
+    visibility: str = VISIBILITY_ANONYMOUS
     handle: str | None = None
 
     def label(self, citizen: str) -> str:
         """What the leaderboard is allowed to print for this citizen."""
         if self.visibility == VISIBILITY_ANONYMOUS:
-            return self.handle or "Citizen-Anonymous"
+            return self.handle or assigned_handle(citizen)
         return f"@{citizen}"
 
 
@@ -273,7 +323,7 @@ class CitizenRecord:
             citizen=data["citizen"],
             kind=data.get("kind", KIND_HUMAN),
             display=Display(
-                visibility=display.get("visibility", VISIBILITY_NAMED),
+                visibility=display.get("visibility", VISIBILITY_ANONYMOUS),
                 handle=display.get("handle"),
             ),
             clearance_level=data.get("clearance_level", 2),
@@ -456,10 +506,10 @@ def save_citizen_history(
 
     Nothing is overwritten that this build could not read or could not fully
     represent - see `_preserve`. The write itself still goes through
-    `_atomic_write`, so the sequence is preserve-then-replace and there is no
+    `atomic_write`, so the sequence is preserve-then-replace and there is no
     moment at which neither copy exists.
     """
-    timestamp = now or _utcnow()
+    timestamp = now or utcnow()
     record = load_citizen_history(citizen, root)
 
     record.pr_count += 1
@@ -516,7 +566,7 @@ def save_citizen_history(
         _preserve(path, f"schema-v{record.schema_version}", timestamp)
     record.schema_version = SCHEMA_VERSION
 
-    _atomic_write(path, json.dumps(record.to_dict(), indent=2) + "\n")
+    atomic_write(path, json.dumps(record.to_dict(), indent=2) + "\n")
     return record
 
 
@@ -545,7 +595,7 @@ def _preserve(path: Path, tag: str, timestamp: str) -> Path | None:
 
     The move is `Path.replace`, which is a rename within one filesystem and so
     atomic: the file is never half-moved, and `save_citizen_history` calls
-    `_atomic_write` immediately after, so the pair leaves either the old file
+    `atomic_write` immediately after, so the pair leaves either the old file
     or the new one on disk at every instant and never neither.
 
     Timestamped rather than a single ``.corrupt.json``, because the failure
@@ -571,7 +621,7 @@ def _preserve(path: Path, tag: str, timestamp: str) -> Path | None:
     return target
 
 
-def _atomic_write(path: Path, payload: str) -> None:
+def atomic_write(path: Path, payload: str) -> None:
     """Write via a temporary file and replace, so a killed job cannot truncate a ledger."""
     handle = tempfile.NamedTemporaryFile(
         "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False

@@ -10,18 +10,30 @@ from shodann.leaderboard import ClearanceRequired, generate_leaderboard, load_al
 from shodann.state import (
     KIND_AGENT,
     VISIBILITY_ANONYMOUS,
+    VISIBILITY_NAMED,
     CitizenRecord,
     Display,
+    assigned_handle,
     citizen_path,
 )
 
 
 def write_record(root, citizen, velocity, *, anonymous=False, handle=None, pr_count=1):
+    # Named is stated, never taken from the default - S1-14 flipped that default
+    # to anonymous, and seventeen tests here failed because they had been
+    # asserting `@username` while relying on a default that was the defect. The
+    # subject of these tests is ranking and partitioning, so consent is declared
+    # rather than assumed; a fixture that silently agrees with the production
+    # default cannot notice when that default is wrong.
     record = CitizenRecord(
         citizen=citizen,
         last_velocity=velocity,
         pr_count=pr_count,
-        display=Display(visibility=VISIBILITY_ANONYMOUS, handle=handle) if anonymous else Display(),
+        display=(
+            Display(visibility=VISIBILITY_ANONYMOUS, handle=handle)
+            if anonymous
+            else Display(visibility=VISIBILITY_NAMED)
+        ),
     )
     path = citizen_path(citizen, root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -66,7 +78,18 @@ def test_anonymous_citizens_appear_without_their_username(tmp_path) -> None:
 
 
 def write_agent(root, name, velocity):
-    record = CitizenRecord(citizen=name, kind=KIND_AGENT, last_velocity=velocity, pr_count=9)
+    # Declared, for the same reason as `write_record` - and worth a note, since
+    # `Display`'s default is now anonymous for every `kind`. An agent has no
+    # privacy interest to protect, so whoever registers one sets its display
+    # block; the default protects people, and applying it uniformly is simpler
+    # than a `kind`-dependent one and wrong in no case that matters.
+    record = CitizenRecord(
+        citizen=name,
+        kind=KIND_AGENT,
+        last_velocity=velocity,
+        pr_count=9,
+        display=Display(visibility=VISIBILITY_NAMED),
+    )
     path = citizen_path(name, root)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record.to_dict()), encoding="utf-8")
@@ -131,12 +154,22 @@ def test_every_band_may_open_their_own_board(tmp_path, clearance: int) -> None:
 
 
 def test_a_record_without_a_kind_partitions_as_human(tmp_path) -> None:
-    """A missing discriminator must not make a citizen vanish from their own board."""
+    """A missing discriminator must not make a citizen vanish from their own board.
+
+    It asserted `@legacy` until S1-14, and the change of assertion is the point
+    rather than a concession to it: a record carrying no `display` block has, by
+    construction, nobody who chose to be named, so it now appears under an
+    assigned handle. Both halves matter and they are different claims - a
+    missing `kind` must not remove a citizen from the board, and a missing
+    `display` must not put their username on it.
+    """
     path = citizen_path("legacy", tmp_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"citizen": "legacy", "last_velocity": 3.0}), encoding="utf-8")
 
-    assert "@legacy" in generate_leaderboard(tmp_path)
+    document = generate_leaderboard(tmp_path)
+    assert assigned_handle("legacy") in document, "a missing kind partitions as human"
+    assert "@legacy" not in document, "a missing display block is not consent"
 
 
 def test_unreadable_ledger_is_skipped_not_fatal(tmp_path) -> None:
@@ -185,3 +218,56 @@ def test_a_ledger_that_cannot_be_opened_does_not_empty_the_board(tmp_path) -> No
 
     assert [record.citizen for record in load_all_citizens(tmp_path)] == ["alpha"]
     assert "@alpha" in generate_leaderboard(tmp_path)
+
+
+# --- S1-44: a figure the record itself says is wrong ------------------------
+
+
+def write_seamed(root, citizen, velocity, fields, *, pr_count=19):
+    record = CitizenRecord(
+        citizen=citizen,
+        last_velocity=velocity,
+        pr_count=pr_count,
+        display=Display(visibility=VISIBILITY_NAMED),
+        discontinuities=[{"date": "2026-07-25T00:00:00Z", "fields": list(fields), "note": "x"}],
+    )
+    path = citizen_path(citizen, root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record.to_dict()), encoding="utf-8")
+
+
+def test_a_seamed_figure_is_marked_and_explained(tmp_path) -> None:
+    """S1-44. The annotation reached a reader of the JSON and nobody else.
+
+    The live record states that its `pr_count` counts write events rather than
+    merges and that the stored 19 is roughly seven real deliveries. The first
+    METRICS.md ever generated printed "Submissions: 19" with nothing attached,
+    to the one audience the board exists for. The figure still stands -
+    correcting a stored metric is the edit this repository refuses - so the
+    reader is told instead.
+    """
+    write_seamed(tmp_path, "seamed", 149.5, ["pr_count", "iteration_streak"])
+
+    document = generate_leaderboard(tmp_path)
+    row = next(line for line in document.splitlines() if "@seamed" in line)
+
+    assert "19*" in row, "the Submissions figure spans a discontinuity"
+    assert "149.5*" not in row, "last_velocity carries no seam and must not be marked"
+    assert "spans a recorded discontinuity" in document, "a mark with no key is noise"
+
+
+def test_a_seam_on_an_unpublished_field_marks_nothing(tmp_path) -> None:
+    """`last_metrics.complexity` carries a seam on the live record and appears
+    in no column. Marking every row because something invisible moved trains a
+    reader to ignore the mark, which costs more than it buys."""
+    write_seamed(tmp_path, "quiet", 5.0, ["last_metrics.complexity"])
+
+    document = generate_leaderboard(tmp_path)
+
+    assert "*" not in document.split("Growth Philosophy")[0].split("Rankings")[1]
+    assert "spans a recorded discontinuity" not in document
+
+
+def test_a_clean_record_carries_no_footnote(tmp_path) -> None:
+    write_record(tmp_path, "clean", 5.0)
+    assert "spans a recorded discontinuity" not in generate_leaderboard(tmp_path)
