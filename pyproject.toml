@@ -3,7 +3,17 @@ name = "shodann"
 version = "0.1.0"
 description = "The Algorithm's benevolent educational oversight system"
 requires-python = ">=3.11"
-dependencies = ["jinja2>=3.1"]
+# `anthropic` is the fallback provider's client, not a second way to reach the
+# primary one. Anthropic's Messages API is not OpenAI-compatible - different
+# body, different response shape, `x-api-key` rather than a bearer token, and a
+# `refusal` stop reason with no counterpart - so the alternative was
+# hand-rolling all of that in urllib beside the wire that already works.
+#
+# Deliberately not pinned. The freeze in PRD section 8 covers tools whose
+# output feeds the velocity score; this one produces prose that the validator
+# checks and the groundedness probe re-checks against the facts. A client
+# release cannot move a citizen's baseline.
+dependencies = ["jinja2>=3.1", "anthropic>=0.40"]
 
 [project.optional-dependencies]
 # Exact pins are for tools whose output feeds the velocity score. A routine

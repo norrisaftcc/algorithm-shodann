@@ -8,7 +8,8 @@ import json
 import pytest
 
 from shodann.capability import LOCAL_SMALL
-from shodann.llm import LLMConfig, LLMUnavailable, generate
+from shodann.clearance import DISCLOSURE_ALLOWANCE
+from shodann.llm import WIRE_ANTHROPIC, LLMConfig, LLMUnavailable, generate
 from shodann.review import (
     EXIT_DEGRADED,
     _safe_citizen,
@@ -620,3 +621,183 @@ def test_cli_writes_the_body_to_a_file_and_not_to_stdout(tmp_path, capsys) -> No
     assert "SHODANN Analysis Complete" in out.read_text(encoding="utf-8")
     assert "SHODANN Analysis Complete" not in captured.out
     assert "wrote" in captured.err
+
+
+# --- the register reaches the review --------------------------------------
+
+
+def _register(root, table: dict) -> None:
+    (root / ".shodann").mkdir(parents=True, exist_ok=True)
+    (root / ".shodann" / "clearances.json").write_text(json.dumps(table), encoding="utf-8")
+
+
+def test_the_register_outranks_the_stored_band(tmp_path) -> None:
+    """A promotion takes effect on the next review, not on the next write.
+
+    The ledger keeps round-tripping `clearance_level` so history stays
+    readable, but it is a record of what happened, not the source of truth.
+    An instructor who promotes a citizen must not have to wait for a merge to
+    rewrite the stored value before the promotion means anything.
+    """
+    citizen_path("octocat", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    citizen_path("octocat", tmp_path).write_text(
+        json.dumps(CitizenRecord(citizen="octocat", clearance_level=2).to_dict()),
+        encoding="utf-8",
+    )
+    _register(tmp_path, {"octocat": "5"})
+
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert "**Clearance**: GREEN" in body, "the file wins over the stored RED"
+
+
+def test_an_unlisted_citizen_stays_red(tmp_path) -> None:
+    """Everyone starts at RED, and an absent register changes nothing."""
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+    assert "**Clearance**: RED" in body
+
+
+def test_the_disclosure_rides_the_finished_comment(tmp_path) -> None:
+    """Appended after validation, so it never competes for the word cap."""
+    _register(tmp_path, {"octocat": "3"})
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert ".shodann/clearances.json" in body
+    assert body.index(".shodann/clearances.json") > body.index("Instrument Readings")
+
+
+def test_a_red_citizen_is_not_handed_the_knob(tmp_path) -> None:
+    _register(tmp_path, {"octocat": "2"})
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+    assert ".shodann/clearances.json" not in body
+
+
+# --- the fallback provider ------------------------------------------------
+
+
+class _FakeAnthropic:
+    """Duck-typed stand-in for the SDK client, at the one call site."""
+
+    def __init__(self, text: str):
+        self._text, self.calls = text, 0
+        self.messages = self
+
+    def create(self, **_):
+        self.calls += 1
+        block = type("Block", (), {"type": "text", "text": self._text})()
+        return type("Message", (), {"content": [block], "stop_reason": "end_turn"})()
+
+
+HAIKU = LLMConfig(model="claude-haiku-4-5", api_key="sk-test", wire=WIRE_ANTHROPIC)
+
+
+def _unreachable(request, timeout=None):
+    raise OSError("no local model listening")
+
+
+def test_an_unreachable_primary_reaches_the_fallback(tmp_path) -> None:
+    """The case the fallback exists for: no local model, review still owed."""
+    sdk = _FakeAnthropic(GOOD_RESPONSE)
+
+    body = review(
+        EVENT, root=tmp_path, config=CONFIG, fallback=HAIKU,
+        opener=_unreachable, client=sdk, write_state=False,
+    )
+
+    assert sdk.calls == 1, "the fallback was asked exactly once"
+    assert "REDUCED ALLOCATION" not in body, "a served review is not a degraded one"
+
+
+def test_without_a_fallback_an_unreachable_primary_still_degrades(tmp_path) -> None:
+    body = review(
+        EVENT, root=tmp_path, config=CONFIG, fallback=None,
+        opener=_unreachable, write_state=False,
+    )
+    assert "REDUCED ALLOCATION" in body
+
+
+def test_a_contract_violation_does_not_spend_a_second_provider(tmp_path) -> None:
+    """The primary answered twice and neither answer was postable.
+
+    Falling back here buys a third attempt at a prompt the first model
+    understood perfectly well - it is the contract that is unmet, and a second
+    provider is not the missing piece.
+    """
+    def answers_badly(request, timeout=None):
+        payload = {"choices": [{"message": {"content": "not a review at all"}}]}
+        return io.BytesIO(json.dumps(payload).encode())
+
+    sdk = _FakeAnthropic(GOOD_RESPONSE)
+    body = review(
+        EVENT, root=tmp_path, config=CONFIG, fallback=HAIKU,
+        opener=answers_badly, client=sdk, write_state=False,
+    )
+
+    assert sdk.calls == 0, "unreachability is the trigger, not a bad answer"
+    assert "REDUCED ALLOCATION" in body
+
+
+def test_an_explicit_config_never_picks_up_a_key_from_the_environment(
+    tmp_path, monkeypatch
+) -> None:
+    """What keeps `scripts/dev.py render` offline on a machine with a key.
+
+    Only a primary that came from the environment gets the environment's
+    fallback; an explicit config means an explicit fallback or none.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-would-be-billed")
+
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert "REDUCED ALLOCATION" in body, "no model configured, and none reached for"
+
+
+# --- the footer is inside the budget, not appended past it -----------------
+
+
+def test_the_degraded_spec_leaves_room_for_the_disclosure() -> None:
+    """The invariant, pinned directly rather than sampled from one repository.
+
+    The degraded comment is SHODANN's own text at a fixed length, so unlike
+    every other spec its budget cannot shrink to make room. Its cap must
+    therefore carry the review budget *plus* the reservation.
+    """
+    assert REDUCED_ALLOCATION.max_words >= 250 + DISCLOSURE_ALLOWANCE
+
+
+@pytest.mark.parametrize("band", [1, 2, 3, 4, 5, 6])
+def test_the_posted_comment_respects_its_cap_at_every_band(band: int, monkeypatch) -> None:
+    """The whole comment is what the contract caps, footer included.
+
+    Measured against this repository rather than an empty temporary one: the
+    readings section grows with the metrics, and an empty root produces a
+    comment 37 words shorter than a real one - short enough to pass a cap the
+    real thing would have broken. The first version of this test made exactly
+    that mistake and passed against the defect it was written for.
+
+    Appending the disclosure after validation let a review that passed at its
+    cap post over it, and the degraded path had no headroom at all: ~235 words
+    of fixed text against a 250-word cap. Every test citizen was RED, so
+    nothing saw it.
+    """
+    monkeypatch.setattr("shodann.review.read_clearance", lambda citizen, root: band)
+    body = review(EVENT, root=".", config=LLMConfig(), write_state=False)
+
+    assert not blocks_posting(validate(body, REDUCED_ALLOCATION)), (
+        f"band {band}: {len(body.split())} words"
+    )
+
+
+def test_the_disclosure_costs_the_model_words_rather_than_the_citizen(tmp_path) -> None:
+    """The reservation is taken from the budget the model is told about."""
+    seen = {}
+
+    def capture(request, timeout=None):
+        seen["prompt"] = json.loads(request.data)["messages"][0]["content"]
+        payload = {"choices": [{"message": {"content": GOOD_RESPONSE}}]}
+        return io.BytesIO(json.dumps(payload).encode())
+
+    _register(tmp_path, {"octocat": "3"})
+    review(EVENT, root=tmp_path, config=CONFIG, opener=capture, write_state=False)
+
+    assert "370" in seen["prompt"], "400 minus the 30 reserved for the footer"

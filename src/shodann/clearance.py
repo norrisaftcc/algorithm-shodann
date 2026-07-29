@@ -21,7 +21,13 @@ from __future__ import annotations
 from .state import clearance_name
 from .validator import ResponseSpec
 
-__all__ = ["ITERATION_GUIDANCE", "clearance_instructions", "iteration_guidance"]
+__all__ = [
+    "DISCLOSURE_BAND",
+    "ITERATION_GUIDANCE",
+    "clearance_disclosure",
+    "clearance_instructions",
+    "iteration_guidance",
+]
 
 TEACHES = """\
 This citizen is building a reference frame and cannot yet calibrate absolute
@@ -73,6 +79,47 @@ def clearance_instructions(level: int) -> str:
     if timebox:
         lines += ["", timebox]
     return "\n".join(lines)
+
+
+DISCLOSURE_BAND = 3
+"""ORANGE. Below this, the register exists but is not advertised.
+
+Not a secret - the file is in the citizen's own repository and readable from
+the first day. What waits for ORANGE is *being told*, because a beginner
+handed a knob for how much explanation they receive will reasonably turn it
+down before they know what they are turning down. By ORANGE they do.
+"""
+
+
+DISCLOSURE_ALLOWANCE = 30
+"""Words reserved for the footer, out of the budget the output contract caps.
+
+The footer is part of the comment a citizen receives, so it is part of the
+budget - appending it after validation would let a review that passed at 400
+words post at 447. Reserved up front rather than checked afterwards, because
+the alternative is dropping the footer to fit, and a promotion the citizen is
+told about only when the model happened to be terse is not a promotion.
+
+`test_clearance.py` asserts the footer stays inside this at every band.
+"""
+
+
+def clearance_disclosure(level: int) -> str:
+    """The footer that tells a citizen where their band is set, or nothing.
+
+    Appended rather than requested from the model: it is a fact about the
+    system's configuration, and a model asked to reproduce a file path will
+    eventually reproduce a slightly wrong one. Its cost is reserved from the
+    word budget by the caller - see `DISCLOSURE_ALLOWANCE`.
+    """
+    if level < DISCLOSURE_BAND:
+        return ""
+    return (
+        "\n\n---\n\n"
+        f"*Your clearance is set in `.shodann/clearances.json` - you are currently "
+        f"{clearance_name(level)}. It governs how much The Algorithm explains. "
+        "See `design_docs/CLEARANCE_REGISTER.md`.*"
+    )
 
 
 def iteration_guidance(spec: ResponseSpec, level: int) -> str:
