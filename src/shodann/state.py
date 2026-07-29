@@ -9,6 +9,13 @@ Schema decided 2026-07-25 (see PRD section 8): snake_case throughout, numbers
 unquoted, a ``kind`` discriminator so agent citizens can share the registry,
 and a ``display`` block so appearing on the leaderboard under one's own name
 is a choice rather than an assumption.
+
+Two properties added 2026-07-29, both about a ledger outliving the build that
+wrote it. It is versioned (:data:`SCHEMA_VERSION`) and it round-trips keys it
+does not recognise, so a file written by a newer SHODANN and read by an older
+one loses nothing; and a file this build cannot read is moved aside rather
+than overwritten, so degrading to a fresh record never destroys the growth
+record it degraded away from.
 """
 
 from __future__ import annotations
@@ -27,10 +34,16 @@ __all__ = [
     "CITIZENS_DIR",
     "CLEARANCES_FILE",
     "DEFAULT_CLEARANCE",
+    "DISCONTINUITY_COUNTING_CHANGE",
+    "DISCONTINUITY_DEFECT_RESIDUE",
+    "DISCONTINUITY_UNIT_CHANGE",
+    "QUARANTINE_DIRNAME",
+    "SCHEMA_VERSION",
     "CitizenRecord",
     "Display",
     "citizen_path",
     "load_citizen_history",
+    "quarantine_dir",
     "read_clearance",
     "save_citizen_history",
 ]
@@ -38,6 +51,23 @@ __all__ = [
 # - S1-26 in the sprint backlog. Left alone rather than fixed in passing.
 
 CITIZENS_DIR = Path(".shodann/citizens")
+
+QUARANTINE_DIRNAME = "quarantine"
+"""Sub-directory of `CITIZENS_DIR` holding ledgers that were moved aside.
+
+A *sub-directory* rather than a sibling filename, and the reason is in another
+module: `leaderboard.load_all_citizens` globs `*.json` non-recursively over the
+citizens directory, so a preserved copy left beside the original would be read
+back as a second citizen. That is fine for a corrupt file - it fails to parse
+and is skipped - but a schema-downgrade copy is valid JSON and would appear as
+a duplicate row. Nesting it costs nothing and needs no change there.
+"""
+
+
+def quarantine_dir(root: Path | str = ".") -> Path:
+    """Where preserved ledgers land beneath ``root``. Created only when used."""
+    return Path(root) / CITIZENS_DIR / QUARANTINE_DIRNAME
+
 
 CLEARANCES_FILE = Path(".shodann/clearances.json")
 """Where a citizen's band is set, in their own repository.
@@ -65,6 +95,46 @@ a GitHub account has no record to hold a band. It stays in the ladder because
 the register defines it and the renderer must not fail on it, not because a
 citizen is expected to sit there.
 """
+
+SCHEMA_VERSION = 1
+"""The ledger shape this build writes, and the shape it claims to understand.
+
+S1-19: `to_dict` emitted a fixed key list and `from_dict` read a fixed key
+list, so a ledger written by a newer SHODANN lost every key this build had
+never heard of on its next write - silently, and in the one file the student's
+whole history lives in. Cross-repo drift is the normal case here, not the
+exotic one: the ledger lives in the citizen's repository and the code lives in
+the course repository, so the two versions are only ever coincidentally equal.
+
+**The rule this field establishes**, stated so a later reader can act on it:
+
+* **Adding a key never bumps the version.** Unknown keys round-trip through
+  `CitizenRecord.extra`, so an addition is already forward-compatible. The
+  version moves only when an existing key changes *meaning, units or type* -
+  the class of change that makes a stored number and a fresh one
+  incomparable, which is exactly what `discontinuities` documents per-file.
+* **A reader whose `SCHEMA_VERSION` is greater than the stored one owes a
+  migration** for every version it skipped. There is one version today, so
+  there is no migration; the field exists so that the first bump has somewhere
+  to branch instead of guessing from which keys happen to be present.
+* **A reader whose `SCHEMA_VERSION` is *less* than the stored one is reading
+  from the future.** It keeps reading - refusing would deny a citizen their
+  review, which PRD section 8 forbids - but on write it stamps its own version
+  and preserves the original first (see `_preserve`), because by the rule
+  above a higher stored version means at least one key it just wrote means
+  something different from what it read.
+* **Absent means 1.** Every ledger written before this field existed is
+  version 1 by construction; the live record is one of them.
+"""
+
+DISCONTINUITY_UNIT_CHANGE = "unit_change"
+"""A stored field kept its name and changed what it measures."""
+
+DISCONTINUITY_COUNTING_CHANGE = "counting_change"
+"""A counter kept counting, but of a different event."""
+
+DISCONTINUITY_DEFECT_RESIDUE = "defect_residue"
+"""A stored figure is the output of a defect, retained rather than corrected."""
 
 TREND_NEW = "new"
 TREND_ASCENDING = "ascending"
@@ -140,6 +210,58 @@ class CitizenRecord:
     the first time. Defaults False, so ledgers written before coverage
     instrumentation existed are correctly read as unmeasured.
     """
+    discontinuities: list[dict] = field(default_factory=list)
+    """Seams in this citizen's own history, where a stored figure stopped
+    being comparable to the ones before it.
+
+    S1-16, S1-17 and S1-39 are all the same shape: a number in the live ledger
+    that is honest about what the instrument did and misleading about what a
+    reader assumes it means. `pr_count` counted pushes and stacked-PR
+    double-writes rather than merges; a `velocity_history` entry is residue of
+    the absent-vs-zero defect (EARLY_RUNS 9); `complexity` changed from a
+    ``def`` count to a ruff `C901` count on 2026-07-29 without changing name.
+
+    The alternative was to correct the figures, and this repository refuses
+    that: editing a metric in a ledger to what it should have been is the move
+    `oracle-warden` names as the most damaging edit available here, and it is
+    why the spurious first baseline was deleted rather than fixed (EARLY_RUNS
+    1). So the numbers stand and the seam is written down beside them, in the
+    JSON, where anyone reading the file can see it - a note in a source file
+    nobody opens would not reach the reader of a `velocity_history`.
+
+    Each entry is ``{"date", "fields", "kind", "note"}``: where the seam falls,
+    which stored paths it touches, one of the ``DISCONTINUITY_*`` kinds, and
+    prose saying why a delta spanning that date subtracts two different
+    quantities. Defaults empty, so every other citizen file is unaffected.
+    """
+    schema_version: int = SCHEMA_VERSION
+    """Which ledger shape this record was read as. See `SCHEMA_VERSION`."""
+    extra: dict = field(default_factory=dict)
+    """Top-level keys this build does not recognise, carried through unchanged.
+
+    Written back on the next save so an older SHODANN reading a newer ledger
+    degrades to *ignoring* what it cannot use rather than deleting it (S1-19).
+    Known keys always win on write - `extra` can never shadow a field this
+    build actually maintains.
+    """
+    unreadable_source: Path | None = field(default=None, compare=False, repr=False)
+    """Set when this record is a degraded stand-in for a file that failed to load.
+
+    Transient: never serialised, and deliberately not a stored field. It is the
+    answer to the question `save_citizen_history` could not previously ask -
+    "was this bare record a genuinely new citizen, or the wreckage of one?" -
+    because both used to arrive as an identical default `CitizenRecord`
+    (S1-15).
+
+    It travels on the record rather than being re-derived at write time on
+    purpose. Re-reading the file to decide whether to preserve it would answer
+    a question about *a different read*, and a file that became readable (or
+    unreadable) in between would be preserved on the wrong evidence. This flag
+    is set by the same read that produced the record being written.
+
+    ``compare=False`` because it describes how a record was obtained, not what
+    it says; two records with the same history are the same record.
+    """
 
     # -- serialisation -----------------------------------------------------
 
@@ -167,10 +289,20 @@ class CitizenRecord:
             velocity_history=list(data.get("velocity_history", [])),
             last_degradation=data.get("last_degradation"),
             coverage_instrumented=bool(data.get("coverage_instrumented", False)),
+            discontinuities=list(data.get("discontinuities", [])),
+            # Absent means 1: every ledger written before versioning existed is
+            # version 1 by construction, including the live record.
+            schema_version=int(data.get("schema_version", 1)),
+            # Everything this build has never heard of, kept whole so the next
+            # write does not delete a newer SHODANN's fields (S1-19). Computed
+            # against `_STORED_KEYS` rather than the dataclass fields, because
+            # not every field is stored (`unreadable_source`) and the two sets
+            # would drift the moment one of them did.
+            extra={k: v for k, v in data.items() if k not in _STORED_KEYS},
         )
 
     def to_dict(self) -> dict:
-        return {
+        payload = {
             "citizen": self.citizen,
             "kind": self.kind,
             "display": asdict(self.display),
@@ -187,7 +319,29 @@ class CitizenRecord:
             "velocity_history": list(self.velocity_history),
             "last_degradation": self.last_degradation,
             "coverage_instrumented": self.coverage_instrumented,
+            # Appended, never interleaved. Other modules and the live file read
+            # this shape, and the two new keys go last so no existing key moves.
+            "discontinuities": list(self.discontinuities),
+            "schema_version": self.schema_version,
         }
+        # `setdefault`, so a stale unknown key can never shadow a field this
+        # build maintains - the round trip preserves them, it does not let them
+        # win.
+        for key, value in self.extra.items():
+            payload.setdefault(key, value)
+        return payload
+
+
+_STORED_KEYS = frozenset(CitizenRecord(citizen="_").to_dict())
+"""Every top-level key this build writes; anything else is an unknown (S1-19).
+
+Derived from `to_dict` rather than restated, because a hand-maintained copy of
+a key list is precisely the thing that drifts - and the failure mode of drift
+here is silent: a key that `to_dict` writes but this set omits would be read
+back into `extra`, written twice, and the `setdefault` would then quietly
+serve the stale copy. `to_dict` is unconditional, so one instantiation names
+the whole set.
+"""
 
 
 def citizen_path(citizen: str, root: Path | str = ".") -> Path:
@@ -234,14 +388,36 @@ def load_citizen_history(citizen: str, root: Path | str = ".") -> CitizenRecord:
 
     A malformed file is treated as a new citizen rather than an exception:
     PRD section 8 requires state corruption to degrade to a default, not to
-    deny a student their feedback.
+    deny a student their feedback. That much is unchanged.
+
+    What changed (S1-15) is that the degradation used to be *terminal*. The
+    fresh record went straight back out through `save_citizen_history`, which
+    overwrote the file it had just failed to parse - so one git conflict
+    marker in a ledger permanently erased a citizen's entire growth record,
+    silently, with nobody told. The record now carries `unreadable_source`,
+    naming the file that failed, and the write path preserves it first.
+
+    Two failures are separated here that used to be one. `FileNotFoundError`
+    is a genuinely new citizen: there is nothing to preserve, and flagging it
+    would mint a quarantine entry on every citizen's first submission.
+    Everything else means the file was *there* and could not be read.
+
+    The caught set matches `read_clearance` in this module rather than
+    inventing a second policy - `OSError` and `UnicodeDecodeError` included,
+    because a ledger truncated mid-write or written in the wrong encoding is
+    no more the student's fault than a trailing comma is, and an uncaught
+    exception here costs them their review.
     """
     path = citizen_path(citizen, root)
     try:
         with path.open(encoding="utf-8") as handle:
             return CitizenRecord.from_dict(json.load(handle))
-    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+    except FileNotFoundError:
+        # Ordered first: it is an OSError subclass, and it is the one absence
+        # that must not look like damage.
         return CitizenRecord(citizen=citizen)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError):
+        return CitizenRecord(citizen=citizen, unreadable_source=path)
 
 
 def compute_trend(history: list[dict]) -> str:
@@ -277,6 +453,11 @@ def save_citizen_history(
 
     The predecessor wrote ``streak`` and read ``iterationStreak``, so streaks
     silently reset to zero on every run. One name, written and read.
+
+    Nothing is overwritten that this build could not read or could not fully
+    represent - see `_preserve`. The write itself still goes through
+    `_atomic_write`, so the sequence is preserve-then-replace and there is no
+    moment at which neither copy exists.
     """
     timestamp = now or _utcnow()
     record = load_citizen_history(citizen, root)
@@ -295,8 +476,23 @@ def save_citizen_history(
     if record.first_submission is None:
         record.first_submission = timestamp
 
-    # Streak counts consecutive submissions that kept moving forward.
-    record.iteration_streak = record.iteration_streak + 1 if result.score > 0 else 0
+    # The streak counts submissions, not wins - unconditionally, whatever the
+    # velocity sign (S1-23, decided 2026-07-29).
+    #
+    # It used to reset on any non-positive score, which contradicted two
+    # product invariants at once: CLAUDE.md states that iteration can never
+    # subtract, and that no branch is punitive - a negative score still yields
+    # "Refactoring phase detected". A citizen who spent a PR deleting dead
+    # code scored negative and lost a streak for doing exactly what the
+    # engine's own refactoring branch congratulates them for. That is a
+    # penalty for improving the codebase, arriving through the one counter
+    # nobody was testing in the losing direction.
+    #
+    # It is also what the leaderboard already claims to show: the column is
+    # "**Submissions**: total PRs, because consistency matters"
+    # (`src/shodann/leaderboard.py`). Consistency is the thing being measured,
+    # and a refactor is a submission.
+    record.iteration_streak += 1
 
     record.velocity_history = [
         {"score": result.score, "date": timestamp},
@@ -306,8 +502,73 @@ def save_citizen_history(
 
     path = citizen_path(citizen, root)
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    if record.unreadable_source is not None:
+        # S1-15. The bytes we could not parse are the only copy of this
+        # citizen's history; the record about to replace them is a blank.
+        _preserve(path, "corrupt", timestamp)
+    elif record.schema_version > SCHEMA_VERSION:
+        # S1-19. Reading from the future is allowed; overwriting it quietly is
+        # not. Unknown keys survive in `extra`, but a higher stored version
+        # means at least one key we recognise now means something else, so the
+        # original is kept and this build stamps the version it actually
+        # wrote.
+        _preserve(path, f"schema-v{record.schema_version}", timestamp)
+    record.schema_version = SCHEMA_VERSION
+
     _atomic_write(path, json.dumps(record.to_dict(), indent=2) + "\n")
     return record
+
+
+def _filename_stamp(timestamp: str) -> str:
+    """An ISO timestamp reduced to characters a filename may hold.
+
+    ``2026-07-29T02:49:00Z`` becomes ``20260729T024900Z``. Colons are illegal
+    in Windows filenames and `.github/workflows/tests.yml` gates this suite on
+    Windows as well as Linux, so the naive `str.replace` of the separator is a
+    cross-platform break waiting for the first corrupt ledger on a laptop.
+    """
+    return "".join(character for character in timestamp if character.isalnum())
+
+
+def _preserve(path: Path, tag: str, timestamp: str) -> Path | None:
+    """Move a ledger we are about to overwrite into the quarantine directory.
+
+    Returns where it landed, or ``None`` if there was nothing to preserve or
+    the move failed.
+
+    **Failure is not fatal, by design.** Quarantining exists so a citizen does
+    not lose their history; it must never become a second way to lose their
+    review. A read-only checkout, a full disk, a permissions problem - each is
+    a reason to carry on and write, not to raise. PRD section 8's degradation
+    rule applies to this code path as much as to the one that created it.
+
+    The move is `Path.replace`, which is a rename within one filesystem and so
+    atomic: the file is never half-moved, and `save_citizen_history` calls
+    `_atomic_write` immediately after, so the pair leaves either the old file
+    or the new one on disk at every instant and never neither.
+
+    Timestamped rather than a single ``.corrupt.json``, because the failure
+    that produces one of these tends to produce several - a conflict marker
+    survives until someone resolves it - and the second run must not overwrite
+    the first quarantine with the blank it caused. The collision counter
+    covers two failures inside the same second.
+    """
+    try:
+        if not path.exists():
+            return None
+        destination = path.parent / QUARANTINE_DIRNAME
+        destination.mkdir(parents=True, exist_ok=True)
+        base = f"{path.stem}.{tag}-{_filename_stamp(timestamp)}"
+        target = destination / f"{base}.json"
+        collision = 0
+        while target.exists():
+            collision += 1
+            target = destination / f"{base}-{collision}.json"
+        path.replace(target)
+    except OSError:
+        return None
+    return target
 
 
 def _atomic_write(path: Path, payload: str) -> None:
