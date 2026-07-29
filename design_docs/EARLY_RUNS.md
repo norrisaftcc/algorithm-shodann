@@ -368,6 +368,24 @@ This would also have caught entry 2 ("a whopping 0.0%") and entry 6 ("from 0% to
 
 **The causal half is still prose**, and still unverifiable: the prompt now says the readings are separate instruments and may not be connected, that a delta of 0 means nothing moved, and that no figure may be predicted. Being unable to test that is the honest state of it — but the figure probe now catches every *consequence* of the causal error that carries a number, which is most of them.
 
+**The third review, minutes later, was clean.** No invented figure, no target, no predicted percentage — and it said outright *"This isn't about reaching a target."* Every number exact again: 371 tests, 19 style diagnostics, 0 syntax errors, 97.9% → 97.4%.
+
+### The one thing left, and it was ours
+
+That review said *"Your iteration streak of **18 commits**"*. `save_citizen_history` increments `iteration_streak` once per submission that scored above zero — consecutive **submissions**, never commits. The number was right and the unit was wrong.
+
+The model did not invent it. `prompts/01_base_shodann_prompt.md` line 66 read:
+
+```
+| **Iteration Streak** | {{ PREV_STREAK }} commits |
+```
+
+It was quoting us, faithfully, and it had no way to know better — the prompt is the only description of that field it will ever see.
+
+**This is the finding, not the label.** Three reviews in a row were audited by comparing every figure against the tools, and this one passed that audit: the number *was* 18. What it failed was a check nobody was running — whether the **unit** attached to a real number is the unit the field actually counts. A mislabelled figure and a fabricated one look identical from outside; the entire difference is whose text the label came from, and the reflex is to file it against the model.
+
+Fixed in the prompt. The general form is worth carrying: **before blaming a model for a claim, grep the prompt for it.**
+
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
 
 **Three** of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that catches a comment disagreeing with itself — and it caught one again on the day entry 12 was written. Wiring the real test tallies in put a truthful line reading *"0 passed, 11 in a pre-success state"* directly above a section that said *"Nothing in these readings raised one."* Both sentences were true of their own inputs, because the velocity engine has never been shown a pass/fail count. The pair was nonsense, no assertion could see it, and one read of the rendered comment could not miss it.

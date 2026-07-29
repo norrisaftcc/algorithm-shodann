@@ -373,3 +373,22 @@ def test_the_prompt_forbids_connecting_two_instruments() -> None:
     assert "separate instruments, and you may not connect them" in rendered
     assert "If a delta reads 0, nothing moved" in rendered
     assert "no targets, no predictions" in rendered
+
+
+def test_the_streak_is_labelled_with_the_unit_it_actually_counts() -> None:
+    """SHODANN said "your iteration streak of 18 commits" and was quoting us.
+
+    `save_citizen_history` increments `iteration_streak` once per submission
+    that scored above zero - consecutive *submissions*, never commits. The
+    prompt labelled it "commits", the model repeated the label faithfully, and
+    the citizen was told a number about their commit history that was really
+    about their submission history.
+
+    Worth its own test because of how nearly it was filed against the model.
+    A mislabelled figure looks identical to a fabricated one from the outside,
+    and the difference is entirely in whose text the label came from.
+    """
+    rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
+
+    assert "consecutive submissions with positive velocity" in rendered
+    assert "Iteration Streak** | 2 commits" not in rendered
