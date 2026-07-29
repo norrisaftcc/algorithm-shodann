@@ -142,6 +142,13 @@ coverage number. The growth in this submission is carried by the other metrics.
 **Velocity Score**: {{ VELOCITY_SCORE }}
 **Iterations This PR**: {{ ITERATION_COUNT }}
 
+**What this score is made of**, so you do not explain it with something else:
+coverage gained, tests added, commits made, docstrings written, functions taken
+on, and lint issues cleared. **Lines added and files changed are not in it.**
+State the score, or attribute it to the terms above. Never say a score is high
+because the submission was large - that teaches a citizen to write more lines,
+which is the one thing this metric exists to refuse.
+
 {{ VELOCITY_ASSESSMENT }}
 <!-- Injected as one of:
      - "EXCEPTIONAL GROWTH DETECTED - Velocity significantly positive"
@@ -234,7 +241,10 @@ count if >= 3. Reference history if this is not their first submission.]
 
 [2-3 bullet points of specific things they did well. Reference actual code
 patterns, file names, or test names from the data. Build confidence. If
-returning citizen, reference improvement from previous submissions.]
+returning citizen, reference improvement from previous submissions. Do not
+write "First tests are hardest tests" - that sentence is reserved for a
+citizen writing their first tests, it is emitted for them by the velocity
+engine, and borrowing it for anyone else spends it.]
 
 ### [CHART EMOJI] Growth Opportunities
 

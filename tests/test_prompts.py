@@ -317,3 +317,43 @@ def test_coverage_still_reports_when_only_the_tests_went_unmeasured() -> None:
     assert "**Coverage**" in rendered
     assert "Coverage was not measured" not in rendered
     assert "Test outcomes were not measured this cycle." in rendered
+
+
+# --- the prompt refuses the lesson the metric exists to refuse -------------
+
+
+def test_the_prompt_states_what_the_score_is_made_of() -> None:
+    """The first synthesised review attributed velocity to volume.
+
+    "your velocity score of 119.03 reflects the substantial work across 16
+    files and 1,302 lines added" - and `loc` is not a term in the composite at
+    all. That sentence teaches a citizen to write more lines, which is the
+    single behaviour `PRD.md` section 7 forbids the system from rewarding.
+
+    The groundedness probe cannot catch it: every number really was in the
+    prompt, and the claim contains no novel backticked identifier. Its own
+    docstring says so - a mislabelled figure is outside what it can see. The
+    prompt is the only place this can be prevented.
+    """
+    rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
+
+    assert "Lines added and files changed are not in it" in rendered
+    assert "teaches a citizen to write more lines" in rendered
+
+
+def test_the_reserved_first_tests_phrase_is_not_offered_to_the_model() -> None:
+    """The engine guards this and the model is not bound by the engine.
+
+    `test_the_phrase_is_not_repeated_to_veterans` stops `calculate_velocity`
+    saying it to someone with 245 tests. The first synthesised review said it
+    anyway, to a citizen with 363 - the phrase is a specific pedagogical
+    signal for a specific moment, and spending it elsewhere is what makes it
+    stop meaning anything.
+    """
+    from shodann.velocity import FIRST_TESTS_PHRASE
+
+    rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
+    # Wrapped prose, so the instruction spans a line break.
+    instruction = " ".join(rendered.split("Algorithm-Approved Patterns")[1].split())
+
+    assert f'Do not write "{FIRST_TESTS_PHRASE}"' in instruction

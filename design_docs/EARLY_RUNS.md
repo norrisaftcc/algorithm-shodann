@@ -296,6 +296,54 @@ That log line also exposed the *next* gap immediately: it said `missing_section`
 
 ---
 
+## 15. The fence that made synthesis impossible — and the first review that worked
+
+**Where:** PR #60, 2026-07-29, chasing entry 14's `missing_section` to ground.
+
+Entry 14's logging said `missing_section` twice and, once it learned to name them, said this:
+
+```
+missing_section (Shipping Velocity Report, Algorithm-Approved Patterns,
+Growth Opportunities, Recommended Iteration)
+```
+
+**All four.** A model omitting a section it has nothing to say in drops one. Losing the entire heading list means the checker could not see the response at all — a different failure wearing the same code, and the count was the only thing that distinguished them.
+
+**What was wrong.** LAYER 4 says *"Generate your response using EXACTLY this structure"* and then shows the structure inside a ` ```markdown ` fence, because that is how you make an example legible. A model that complies with the **illustration** returns its review inside a fence too. `_headings` strips fenced blocks before looking for headings — and that guard is correct, and was itself paid for: a model once illustrated a fix with `# Before` / `# After` inside a fenced example and the validator invented two phantom sections out of the student's own code.
+
+Two correct behaviours, conflicting only when the fence *is* the whole response. Reproduced locally in one line by wrapping a known-good response and getting the byte-identical violation.
+
+**SHODANN could not synthesise a review at all while this held.** Any model, any citizen, every time. It had been true since the validator and the template were first written against each other, and it was invisible because the fallback caught it — the system had a fluent story for its own failure, in SHODANN's own voice, and the story blamed the model.
+
+**What changed:** `unwrap_fenced_response` unwraps only a fence that is the entire response, so a review containing a code example is untouched. The prompt also now says not to wrap, which helps models nobody debugs.
+
+### And then it worked
+
+The first synthesised SHODANN review in the project's history, on the very next run. Every figure in it traces to an instrument, verified against the tree afterwards:
+
+| Claim | Measured | |
+|---|---|---|
+| "All 363 tests pass" | 363 passed | ✓ |
+| "20 style diagnostics" | 20 | ✓ |
+| "Zero syntax barriers" | 0 | ✓ |
+| "97.9% → 97.5%" | ledger 97.9, measured 97.5 | ✓ |
+| "your 19th submission" | pr_count 18 + 1 | ✓ |
+
+The hard/soft split held on its first real outing: the model invented no number. Three of those five figures did not exist anywhere in the system a day earlier — the tallies and the syntax count are entry 12's rung, reaching a citizen.
+
+**Two things in the prose were still wrong**, and neither is a hallucination:
+
+- *"your velocity score of 119.03 reflects the substantial work across 16 files and 1,302 lines added."* **`loc` is not a term in the composite.** The sentence teaches a citizen that writing more lines raises their score, which is the exact behaviour `PRD.md` §7 forbids the system from rewarding — the lines-of-code metric, taught by the machine built to refuse it, in its first sentence about itself.
+- *"First tests are hardest tests — you've moved past that threshold"*, said to a citizen with 363 tests. `test_the_phrase_is_not_repeated_to_veterans` stops the *engine* doing this. The model is not bound by the engine, and a phrase reserved for one moment stops meaning anything once it is spent on any other.
+
+**The groundedness probe cannot see either**, and says so itself: every number really was in the prompt, and neither claim contains a novel backticked identifier. Its docstring named this limit — *"it cannot catch a mislabelled figure"* — before there was an example. Now there is one, and it is the most important sentence in the review.
+
+Both are fixed in the prompt, which is the only layer that can. The score's terms are now stated where the score is stated, with lines and files explicitly excluded.
+
+**Status: the content guards are unverified.** They are instructions to a model, not checks on its output, so unlike everything else on this page they are hope rather than mechanism. The next synthesised review is the test.
+
+---
+
 ## What the pattern says
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
