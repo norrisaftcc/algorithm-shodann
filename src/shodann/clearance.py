@@ -71,6 +71,33 @@ ITERATION_GUIDANCE = {
 }
 
 
+NOT_EARNED = (
+    "**A band is assigned, never earned.** An instructor sets it in "
+    "`.shodann/clearances.json`; nothing a citizen does to their code moves it, "
+    "and no reading in this prompt is evidence about it. Never tell a citizen "
+    "that work of any kind will raise their clearance, and never frame a "
+    "suggestion as a step toward a higher band."
+)
+"""The rule the templates never stated, and the model twice filled in wrongly.
+
+SHODANN told this citizen that small reversible commits are "how citizens scale
+from ORANGE to higher clearance", and separately that a habit "compounds as your
+clearance rises". Both invent a promotion mechanism out of nothing: the prompt
+supplies a band and instructs the model to calibrate to it, and says nowhere how
+a band is obtained.
+
+It is not a small error. Clearance is a role assignment, and #59 *declined*
+`prompts/03`'s `INFER_CLEARANCE` sketch rather than leaving it unimplemented,
+on the grounds that a band inferred from readings is a second score and this
+product rests on improvement outranking position. A citizen told that iterating
+well raises their band has been handed exactly that second score - and by the
+one voice they have no way to check it against.
+
+Injected at every band rather than written into each posture, because the rule
+does not vary and a per-band copy is five places for one answer to drift.
+"""
+
+
 def clearance_instructions(level: int) -> str:
     """The pedagogical guidance injected into LAYER 3 for one band."""
     posture, timebox = BANDS.get(max(1, min(level, 6)), BANDS[2])
@@ -78,6 +105,7 @@ def clearance_instructions(level: int) -> str:
     lines = [f"Current band: **{name}**.", "", posture]
     if timebox:
         lines += ["", timebox]
+    lines += ["", NOT_EARNED]
     return "\n".join(lines)
 
 
