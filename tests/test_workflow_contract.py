@@ -272,3 +272,92 @@ def test_the_deletion_survives_a_directory_at_the_report_path(workflow: str) -> 
 
     assert "rm -rf" in analyse
     assert "rm -f coverage.json" not in analyse, "the non-recursive form is the defect"
+
+
+# --- the ledger records deliveries, and survives losing a race -------------
+
+
+def _ledger_step(workflow: str) -> str:
+    """Everything after the step's own name, so its rationale comment is excluded.
+
+    The comments motivating this step sit above `- name:` and therefore land in
+    the *first* half of the split. That matters here for the same reason it
+    mattered in `test_coverage_does_not_instrument_the_citizens_own_tests`: a
+    comment naming the defect is documentation, and an assertion that reads it
+    passes on the prose while the contract is broken.
+    """
+    return workflow.split("- name: Record the citizen ledger")[1]
+
+
+def _executable(block: str) -> str:
+    return "\n".join(
+        line for line in block.splitlines() if line.strip() and not line.strip().startswith("#")
+    )
+
+
+def test_the_ledger_is_only_written_for_a_merge_to_the_default_branch(workflow: str) -> None:
+    """S1-38. `merged == true` counts stacked pull requests as deliveries.
+
+    A pull request merged into another feature branch fires an identical
+    closed event, and the branch beneath it may never land. #58 merged into
+    #56's branch on 2026-07-28 and SHODANN recorded a cycle for it; the live
+    ledger reached pr_count 19 and iteration_streak 19 against roughly seven
+    merges that actually shipped. Velocity is a rate of shipping, so the base
+    ref has to be the branch that ships.
+
+    The comparison is against `github.event.repository.default_branch` and the
+    literal 'main' is asserted absent. This file is copied into student
+    repositories under the deployment contract, and a hardcoded branch name
+    there records nothing at all - a failure that looks exactly like a citizen
+    who has not merged yet, which is the quietest way for a ledger to be wrong.
+    """
+    condition = _ledger_step(workflow).split("env:")[0]
+
+    assert "github.event.pull_request.merged == true" in condition, "still merge-only"
+    assert "github.event.pull_request.base.ref == github.event.repository.default_branch" in (
+        condition
+    ), "a stacked merge is not a delivery"
+    assert "'main'" not in condition, "the default branch of a student repository is not ours"
+
+
+def test_the_ledger_push_rebases_onto_the_fetched_base_and_retries(workflow: str) -> None:
+    """S1-18. The concurrency group is per pull request; the push target is not.
+
+    `group: shodann-${{ github.event.pull_request.number }}` serialises runs
+    within one pull request and does nothing between two. Two citizens merging
+    in the same minute both push a ledger commit to the same default branch and
+    the loser is rejected as non-fast-forward - which, under one-repo-per-
+    student, is a red X on a student's pull request for a race they cannot see.
+
+    Rebasing onto the freshly fetched tip is what makes the retry meaningful:
+    pushing the same rejected commit again three times is not a fix. The push
+    must therefore come *after* the fetch and the rebase, which is asserted by
+    position rather than by presence - a bare `git push` sitting above an
+    unused fetch would satisfy any membership test.
+    """
+    run = _executable(_ledger_step(workflow))
+
+    assert 'git fetch origin "$GITHUB_BASE_REF"' in run, "the tip has to be re-read to rebase onto"
+    assert "git rebase FETCH_HEAD" in run, "a refspec-less fetch may leave origin/<branch> stale"
+    assert re.search(r"for attempt in [\d ]+; do", run), "one attempt is not a retry"
+
+    push = run.index('git push origin "HEAD:${GITHUB_BASE_REF}"')
+    assert run.index("git rebase FETCH_HEAD") < push, "re-pushing the rejected commit is not a fix"
+
+
+def test_a_lost_ledger_push_warns_instead_of_failing_the_students_check(workflow: str) -> None:
+    """The argument is already made in `_announce_degradation`, src/shodann/review.py.
+
+    Under one-repo-per-student this check appears on the *student's* pull
+    request. A red X for our own lost push is a verdict on their submission for
+    an infrastructure fault they did not cause, and PRD section 8 says an
+    outage of ours must not reflect on a submission. A `::warning::` is visible
+    in the Actions tab, where the maintainer is, and invisible as a verdict,
+    where the student is. The ledger itself is recoverable: the next merge
+    recomputes from the same reports.
+    """
+    run = _executable(_ledger_step(workflow))
+
+    assert "::warning::" in run, "the maintainer still has to be told"
+    assert "exit 1" not in run, "our race is not the citizen's failure"
+    assert run.rstrip().endswith("exit 0"), "exhausting the retries must not fail the job"

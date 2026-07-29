@@ -320,12 +320,37 @@ jobs:
       # found the hard way, writing the ledger to every PR branch means two
       # open pull requests produce two divergent ledgers and the second merge
       # always conflicts. SHODANN spent an afternoon blocking its own PRs.
+      #
+      # `merged == true` alone is not that test, and the live ledger is the
+      # proof. A stacked pull request merges into another feature branch that
+      # has itself not landed, and its closed event is indistinguishable from
+      # a real one: #58 merged into #56's branch on 2026-07-28 and SHODANN
+      # recorded a full cycle for it, carrying pr_count and iteration_streak
+      # to 16 for work that shipped once. The live ledger reads pr_count 19
+      # against roughly seven merges to the default branch. Velocity is a rate
+      # of shipping, so a branch-to-branch merge has to count as zero
+      # deliveries until the branch beneath it lands.
+      #
+      # `github.event.repository.default_branch`, never the literal 'main'.
+      # The deployment contract copies this file into student repositories
+      # whose default branch nobody here chooses; a hardcoded name would
+      # record nothing at all in a repository that calls it something else,
+      # and an empty ledger is indistinguishable from a citizen who has not
+      # merged yet.
       - name: Record the citizen ledger
-        if: github.event.action == 'closed' && github.event.pull_request.merged == true
+        if: >-
+          github.event.action == 'closed'
+          && github.event.pull_request.merged == true
+          && github.event.pull_request.base.ref == github.event.repository.default_branch
         env:
+          # Citizen-controlled text never enters this block as an expression -
+          # a login is the one field GitHub constrains, and it still arrives
+          # through env rather than `${{ }}` so the rule needs no exceptions.
           CITIZEN: ${{ github.event.pull_request.user.login }}
         run: |
-          # Already on the base branch: the checkout step selected it.
+          # Already on the base branch: the checkout step selected it on a
+          # closed event, and the condition above has confirmed that base is
+          # the default branch, so this is the branch the push targets.
           python -m shodann.review \
             --event "$GITHUB_EVENT_PATH" \
             --out /tmp/shodann-record.md \
@@ -339,4 +364,42 @@ jobs:
           git config user.email "shodann[bot]@users.noreply.github.com"
           git add .shodann
           git commit -m "Record velocity for @${CITIZEN}"
-          git push origin "HEAD:${GITHUB_BASE_REF}"
+
+          # The concurrency group at the top of this file is keyed on the pull
+          # request number, so it serialises runs *within* one pull request and
+          # does nothing whatever *between* two. Two citizens merging in the
+          # same minute both push a ledger commit to the same default branch
+          # and the second is rejected as non-fast-forward. Fetching and
+          # rebasing first means the loser of the race replays its one commit
+          # on the winner's tip rather than demanding a merge; the ledger is
+          # append-mostly per citizen, so the replay is usually trivial.
+          #
+          # FETCH_HEAD rather than origin/$GITHUB_BASE_REF: a refspec-less
+          # fetch of a single branch is not guaranteed to move the
+          # remote-tracking ref, and rebasing onto a stale one reproduces the
+          # rejection it was supposed to cure.
+          for attempt in 1 2 3; do
+            if ! git fetch origin "$GITHUB_BASE_REF" || ! git rebase FETCH_HEAD; then
+              # A conflict does not resolve itself on a retry - two runs wrote
+              # the same citizen file - so this leaves the loop rather than
+              # spending two more attempts reaching the same warning.
+              git rebase --abort || true
+              echo "::warning::SHODANN could not replay the ledger for @${CITIZEN} onto ${GITHUB_BASE_REF}; the record was not written. The review posted normally and this does not reflect on the submission."
+              exit 0
+            fi
+            if git push origin "HEAD:${GITHUB_BASE_REF}"; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          # Warned, not failed, and deliberately: the same argument
+          # `_announce_degradation` makes in src/shodann/review.py. Under
+          # one-repo-per-student this check appears on the *student's* pull
+          # request, so a red X for our own lost push is a verdict on their
+          # submission for an infrastructure fault they did not cause. A
+          # warning is visible in the Actions tab, where the maintainer is, and
+          # invisible as a verdict, where the student is. The ledger is
+          # recoverable - the next merge recomputes from the same reports.
+          echo "::warning::SHODANN lost the race to push the ledger for @${CITIZEN} to ${GITHUB_BASE_REF} after 3 attempts. The review posted normally and this does not reflect on the submission."
+          exit 0
