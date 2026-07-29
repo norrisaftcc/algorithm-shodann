@@ -620,3 +620,52 @@ def test_cli_writes_the_body_to_a_file_and_not_to_stdout(tmp_path, capsys) -> No
     assert "SHODANN Analysis Complete" in out.read_text(encoding="utf-8")
     assert "SHODANN Analysis Complete" not in captured.out
     assert "wrote" in captured.err
+
+
+# --- the register reaches the review --------------------------------------
+
+
+def _register(root, table: dict) -> None:
+    (root / ".shodann").mkdir(parents=True, exist_ok=True)
+    (root / ".shodann" / "clearances.json").write_text(json.dumps(table), encoding="utf-8")
+
+
+def test_the_register_outranks_the_stored_band(tmp_path) -> None:
+    """A promotion takes effect on the next review, not on the next write.
+
+    The ledger keeps round-tripping `clearance_level` so history stays
+    readable, but it is a record of what happened, not the source of truth.
+    An instructor who promotes a citizen must not have to wait for a merge to
+    rewrite the stored value before the promotion means anything.
+    """
+    citizen_path("octocat", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    citizen_path("octocat", tmp_path).write_text(
+        json.dumps(CitizenRecord(citizen="octocat", clearance_level=2).to_dict()),
+        encoding="utf-8",
+    )
+    _register(tmp_path, {"octocat": "5"})
+
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert "**Clearance**: GREEN" in body, "the file wins over the stored RED"
+
+
+def test_an_unlisted_citizen_stays_red(tmp_path) -> None:
+    """Everyone starts at RED, and an absent register changes nothing."""
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+    assert "**Clearance**: RED" in body
+
+
+def test_the_disclosure_rides_the_finished_comment(tmp_path) -> None:
+    """Appended after validation, so it never competes for the word cap."""
+    _register(tmp_path, {"octocat": "3"})
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert ".shodann/clearances.json" in body
+    assert body.index(".shodann/clearances.json") > body.index("Instrument Readings")
+
+
+def test_a_red_citizen_is_not_handed_the_knob(tmp_path) -> None:
+    _register(tmp_path, {"octocat": "2"})
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+    assert ".shodann/clearances.json" not in body

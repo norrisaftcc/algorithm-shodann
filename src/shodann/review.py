@@ -28,10 +28,17 @@ from pathlib import Path
 
 from .analysis import AnalysisReports
 from .capability import FULL, Capabilities, refusal_reason
+from .clearance import clearance_disclosure
 from .groundedness import check_groundedness
 from .llm import LLMConfig, LLMUnavailable, generate
 from .prompts import build_context, render_prompt
-from .state import CitizenRecord, clearance_name, load_citizen_history, save_citizen_history
+from .state import (
+    CitizenRecord,
+    clearance_name,
+    load_citizen_history,
+    read_clearance,
+    save_citizen_history,
+)
 from .validator import (
     SPECS,
     ResponseSpec,
@@ -416,6 +423,13 @@ def review(
         else AnalysisReports()
     )
     record = load_citizen_history(facts["citizen"], root)
+    # The file wins over the ledger. The ledger keeps round-tripping the band
+    # so history stays readable, but the instructor's file is the source: a
+    # promotion has to take effect on the next review, not whenever the stored
+    # value happens to be rewritten.
+    band = read_clearance(facts["citizen"], root)
+    if band is not None:
+        record.clearance_level = band
     metrics, previous = reconcile_coverage(
         collect_metrics(root, reports), record, reports
     )
@@ -468,6 +482,8 @@ def review(
     except LLMUnavailable as unavailable:
         degradation = str(unavailable)
         body = reduced_allocation_comment(facts, result, record, degradation, reports)
+
+    body += clearance_disclosure(record.clearance_level)
 
     if write_state:
         save_citizen_history(

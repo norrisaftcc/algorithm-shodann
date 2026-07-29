@@ -87,6 +87,24 @@ Agent metrics are a different quantity from student metrics — throughput, revi
 - The response validator (#24) must key its word cap and required-section list on clearance, since BLUE+ changes both. It already takes these as parameters rather than constants.
 - The output contract's "exactly 1 action" rule does not hold at BLUE+. The validator must know that.
 
+## Who sets the register (decided 2026-07-29)
+
+**The instructor sets it. SHODANN never infers it, at any band.**
+
+The role-not-skill argument above was made for GREEN and BLUE+, on the grounds that those are role assignments rather than measurements. It generalises: a band inferred from readings is a second score, and this product rests on improvement outranking position. `prompts/03`'s `INFER_CLEARANCE` is therefore **declined** rather than unimplemented — it is not a gap waiting to be filled. Its documented defects (no terminal `ELSE`, an ORANGE branch that shadows YELLOW) are consistent with that: nobody finished it because it should not exist.
+
+The shape, which had no example anywhere until now, is a flat map in the citizen's own repository at `.shodann/clearances.json`:
+
+```json
+{ "norrisaftcc": "2" }
+```
+
+Values are strings because `shodann-core.yml:98` wrote them that way; integers are accepted. An unlisted citizen, an unreadable file, or a nonsense value all mean *unset*, and unset means RED — never an exception, because a citizen must not lose their review to a trailing comma. Out-of-range values saturate rather than reject.
+
+**Everyone starts at RED.** INFRARED stays in the ladder because the register defines it and the renderer must not fail on it, but it is an onboarding state rather than a tracked one: a citizen without a GitHub account has no record to hold a band.
+
+**ORANGE is where the register is disclosed.** From ORANGE up, every review carries a footer naming the file and pointing here. This is not secrecy below that — the file is in the citizen's own repository and readable from their first day. What waits is *being told*, because a beginner handed a knob controlling how much explanation they receive will reasonably turn it down before they know what they are turning down.
+
 ## What this does not change
 
 The vocabulary substitutions, the growth frame, the prohibition on punitive language, and the velocity-over-position principle apply identically at every level. A BLUE+ citizen who regressed is still in a refactoring phase, not a failure state.

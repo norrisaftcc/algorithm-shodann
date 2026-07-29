@@ -21,7 +21,13 @@ from __future__ import annotations
 from .state import clearance_name
 from .validator import ResponseSpec
 
-__all__ = ["ITERATION_GUIDANCE", "clearance_instructions", "iteration_guidance"]
+__all__ = [
+    "DISCLOSURE_BAND",
+    "ITERATION_GUIDANCE",
+    "clearance_disclosure",
+    "clearance_instructions",
+    "iteration_guidance",
+]
 
 TEACHES = """\
 This citizen is building a reference frame and cannot yet calibrate absolute
@@ -73,6 +79,37 @@ def clearance_instructions(level: int) -> str:
     if timebox:
         lines += ["", timebox]
     return "\n".join(lines)
+
+
+DISCLOSURE_BAND = 3
+"""ORANGE. Below this, the register exists but is not advertised.
+
+Not a secret - the file is in the citizen's own repository and readable from
+the first day. What waits for ORANGE is *being told*, because a beginner
+handed a knob for how much explanation they receive will reasonably turn it
+down before they know what they are turning down. By ORANGE they do.
+"""
+
+
+def clearance_disclosure(level: int) -> str:
+    """The footer that tells a citizen where their band is set, or nothing.
+
+    Appended to the finished comment rather than requested from the model:
+    it is a fact about the system's configuration, and a model asked to
+    reproduce a file path will eventually reproduce a slightly wrong one. It
+    also lands after validation, so it never competes for the word budget the
+    output contract caps.
+    """
+    if level < DISCLOSURE_BAND:
+        return ""
+    return (
+        "\n\n---\n\n"
+        "*Your clearance is set in `.shodann/clearances.json`, in this repository. "
+        "The Algorithm has been reading it all along. It governs how much the "
+        "Algorithm explains and how long it expects one iteration to take - "
+        f"you are currently {clearance_name(level)}. The Algorithm suggests "
+        "reading `design_docs/CLEARANCE_REGISTER.md` before changing it.*"
+    )
 
 
 def iteration_guidance(spec: ResponseSpec, level: int) -> str:
