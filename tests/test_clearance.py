@@ -193,3 +193,16 @@ def test_the_disclosure_keeps_the_voice() -> None:
     footer = clearance_disclosure(6)
     for forbidden in ("You should", "You need to", "Unfortunately", "wrong", "failed"):
         assert forbidden not in footer
+
+
+def test_the_footer_stays_inside_its_reservation() -> None:
+    """The allowance is subtracted from the model's budget, so it must hold.
+
+    A footer that outgrows this silently puts every ORANGE-and-above comment
+    over the cap the output contract states.
+    """
+    from shodann.clearance import DISCLOSURE_ALLOWANCE
+
+    for level in (3, 4, 5, 6):
+        words = len(clearance_disclosure(level).split())
+        assert words <= DISCLOSURE_ALLOWANCE, f"band {level} footer is {words} words"

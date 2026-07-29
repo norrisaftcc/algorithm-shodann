@@ -28,7 +28,7 @@ from pathlib import Path
 
 from .analysis import AnalysisReports
 from .capability import FULL, Capabilities, refusal_reason
-from .clearance import clearance_disclosure
+from .clearance import DISCLOSURE_ALLOWANCE, clearance_disclosure
 from .groundedness import check_groundedness
 from .llm import LLMConfig, LLMUnavailable, fallback_from_env, generate
 from .prompts import build_context, render_prompt
@@ -425,11 +425,18 @@ def _synthesise_chain(
     opener=None,
     client=None,
 ) -> str:
-    """The configured model, then the fallback if it could not be reached.
+    """The configured model, then the fallback if it produced nothing usable.
 
-    "No local model available" is the case this exists for, so the trigger is
-    unreachability and nothing else. A contract violation is deliberately not
-    a trigger; see `_ContractViolation`.
+    The trigger is every `LLMUnavailable` except `_ContractViolation` - which
+    is broader than "unreachable", and deliberately so. `generate` raises the
+    same exception for a connection failure, unparseable JSON, an unexpected
+    response shape, a refusal, and an empty body; a provider that answers with
+    garbage is no more available than one that does not answer, and a second
+    one is worth trying in all of those cases.
+
+    The one exclusion is the case where a second provider cannot help: the
+    primary returned a well-formed response, twice, and both failed *our*
+    contract rather than its own. See `_ContractViolation`.
     """
     try:
         return _synthesise(prompt, spec, config, opener=opener, client=client)
@@ -489,6 +496,14 @@ def review(
     record.pr_count += 1
     spec = _spec_for(record, mode)
 
+    # Reserve the footer's words before the model is told its budget, so the
+    # posted comment - review plus footer - stays inside the cap the contract
+    # states. Appending after validation would let a review that passed at 400
+    # words post at 447, which is the cap applied to the wrong thing.
+    disclosure = clearance_disclosure(record.clearance_level)
+    if disclosure:
+        spec = spec.with_(max_words=spec.max_words - DISCLOSURE_ALLOWANCE)
+
     # Refuse outside the envelope rather than attempting and discovering. A 3B
     # model asked for the BLUE+ peer register spent two attempts failing; this
     # reaches the same outcome in one step, with a reason worth recording.
@@ -531,7 +546,7 @@ def review(
         degradation = str(unavailable)
         body = reduced_allocation_comment(facts, result, record, degradation, reports)
 
-    body += clearance_disclosure(record.clearance_level)
+    body += disclosure
 
     if write_state:
         save_citizen_history(

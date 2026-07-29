@@ -8,6 +8,7 @@ import json
 import pytest
 
 from shodann.capability import LOCAL_SMALL
+from shodann.clearance import DISCLOSURE_ALLOWANCE
 from shodann.llm import WIRE_ANTHROPIC, LLMConfig, LLMUnavailable, generate
 from shodann.review import (
     EXIT_DEGRADED,
@@ -749,3 +750,54 @@ def test_an_explicit_config_never_picks_up_a_key_from_the_environment(
     body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
 
     assert "REDUCED ALLOCATION" in body, "no model configured, and none reached for"
+
+
+# --- the footer is inside the budget, not appended past it -----------------
+
+
+def test_the_degraded_spec_leaves_room_for_the_disclosure() -> None:
+    """The invariant, pinned directly rather than sampled from one repository.
+
+    The degraded comment is SHODANN's own text at a fixed length, so unlike
+    every other spec its budget cannot shrink to make room. Its cap must
+    therefore carry the review budget *plus* the reservation.
+    """
+    assert REDUCED_ALLOCATION.max_words >= 250 + DISCLOSURE_ALLOWANCE
+
+
+@pytest.mark.parametrize("band", [1, 2, 3, 4, 5, 6])
+def test_the_posted_comment_respects_its_cap_at_every_band(band: int, monkeypatch) -> None:
+    """The whole comment is what the contract caps, footer included.
+
+    Measured against this repository rather than an empty temporary one: the
+    readings section grows with the metrics, and an empty root produces a
+    comment 37 words shorter than a real one - short enough to pass a cap the
+    real thing would have broken. The first version of this test made exactly
+    that mistake and passed against the defect it was written for.
+
+    Appending the disclosure after validation let a review that passed at its
+    cap post over it, and the degraded path had no headroom at all: ~235 words
+    of fixed text against a 250-word cap. Every test citizen was RED, so
+    nothing saw it.
+    """
+    monkeypatch.setattr("shodann.review.read_clearance", lambda citizen, root: band)
+    body = review(EVENT, root=".", config=LLMConfig(), write_state=False)
+
+    assert not blocks_posting(validate(body, REDUCED_ALLOCATION)), (
+        f"band {band}: {len(body.split())} words"
+    )
+
+
+def test_the_disclosure_costs_the_model_words_rather_than_the_citizen(tmp_path) -> None:
+    """The reservation is taken from the budget the model is told about."""
+    seen = {}
+
+    def capture(request, timeout=None):
+        seen["prompt"] = json.loads(request.data)["messages"][0]["content"]
+        payload = {"choices": [{"message": {"content": GOOD_RESPONSE}}]}
+        return io.BytesIO(json.dumps(payload).encode())
+
+    _register(tmp_path, {"octocat": "3"})
+    review(EVENT, root=tmp_path, config=CONFIG, opener=capture, write_state=False)
+
+    assert "370" in seen["prompt"], "400 minus the 30 reserved for the footer"

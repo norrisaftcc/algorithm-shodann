@@ -91,24 +91,34 @@ down before they know what they are turning down. By ORANGE they do.
 """
 
 
+DISCLOSURE_ALLOWANCE = 30
+"""Words reserved for the footer, out of the budget the output contract caps.
+
+The footer is part of the comment a citizen receives, so it is part of the
+budget - appending it after validation would let a review that passed at 400
+words post at 447. Reserved up front rather than checked afterwards, because
+the alternative is dropping the footer to fit, and a promotion the citizen is
+told about only when the model happened to be terse is not a promotion.
+
+`test_clearance.py` asserts the footer stays inside this at every band.
+"""
+
+
 def clearance_disclosure(level: int) -> str:
     """The footer that tells a citizen where their band is set, or nothing.
 
-    Appended to the finished comment rather than requested from the model:
-    it is a fact about the system's configuration, and a model asked to
-    reproduce a file path will eventually reproduce a slightly wrong one. It
-    also lands after validation, so it never competes for the word budget the
-    output contract caps.
+    Appended rather than requested from the model: it is a fact about the
+    system's configuration, and a model asked to reproduce a file path will
+    eventually reproduce a slightly wrong one. Its cost is reserved from the
+    word budget by the caller - see `DISCLOSURE_ALLOWANCE`.
     """
     if level < DISCLOSURE_BAND:
         return ""
     return (
         "\n\n---\n\n"
-        "*Your clearance is set in `.shodann/clearances.json`, in this repository. "
-        "The Algorithm has been reading it all along. It governs how much the "
-        "Algorithm explains and how long it expects one iteration to take - "
-        f"you are currently {clearance_name(level)}. The Algorithm suggests "
-        "reading `design_docs/CLEARANCE_REGISTER.md` before changing it.*"
+        f"*Your clearance is set in `.shodann/clearances.json` - you are currently "
+        f"{clearance_name(level)}. It governs how much The Algorithm explains. "
+        "See `design_docs/CLEARANCE_REGISTER.md`.*"
     )
 
 
