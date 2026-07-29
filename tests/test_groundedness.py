@@ -11,6 +11,7 @@ import pytest
 from shodann.groundedness import (
     BLOCKING_THRESHOLD,
     check_groundedness,
+    constructs_claimed_in_data_files,
     ungrounded_attribution,
     ungrounded_percentages,
     ungrounded_tokens,
@@ -252,3 +253,58 @@ def test_a_composition_the_prompt_does_state_is_grounded() -> None:
     assert ungrounded_attribution(
         "This raises the coverage term.", prompt="The coverage term is weighted 2.0."
     ) == []
+
+
+# --- the fourth probe: contents invented for a file with none ---------------
+
+POSTED_ADVICE = (
+    "At ORANGE clearance, the Algorithm recommends examining whether your new "
+    "functions in METRICS.md have narrative explanations. Not every function "
+    "needs prose, but producer functions often benefit from context."
+)
+
+
+def test_a_markdown_file_is_not_told_to_document_its_functions() -> None:
+    """Verbatim from SHODANN's third review of PR #61, 2026-07-29.
+
+    `METRICS.md` is a generated markdown leaderboard and has no functions. The
+    model had less to work from than the sentence implies: template 01 supplies
+    `FILES_CHANGED` as a *count* and no file list at all, so the name can only
+    have come from `PR_TITLE`. A filename in a title became a file with
+    contents, then a file whose functions could be reviewed for docstrings.
+
+    The module docstring predicted the shape - "it cannot catch a mislabelled
+    figure... a number that really was in the prompt, under the wrong name."
+    Here a *filename* really was in the prompt, so the identifier probe sees a
+    grounded token and passes.
+    """
+    findings = check_groundedness(
+        POSTED_ADVICE, prompt="Files changed: 13. Title: give METRICS.md a producer."
+    )
+    invented = [f for f in findings if f.code == "invented_file_contents"]
+
+    assert invented, "the token is grounded; the claim about its contents is not"
+    assert invented[0].severity == BLOCKING
+    assert "METRICS.md" in invented[0].evidence
+
+
+def test_the_same_claim_about_a_real_module_is_left_alone() -> None:
+    """A `.py` file does have functions, and saying so must stay legal.
+
+    The probe is narrow deliberately. "Describe no file's contents" is the rule
+    and it lives in template 01 because it is not mechanically checkable; this
+    check covers only the subset that is wrong whatever the prompt said.
+    """
+    assert constructs_claimed_in_data_files(
+        "The functions in leaderboard.py could use docstrings."
+    ) == []
+
+
+def test_naming_a_data_file_without_claiming_code_in_it_is_fine() -> None:
+    """SHODANN has to be able to talk about METRICS.md, which this PR added."""
+    for benign in (
+        "METRICS.md is regenerated on merge.",
+        "METRICS.md now has a producer, and 20 style diagnostics remain.",
+        "The Algorithm suggests a docstring on your producer function.",
+    ):
+        assert constructs_claimed_in_data_files(benign) == [], benign

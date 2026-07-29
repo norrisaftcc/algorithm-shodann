@@ -375,6 +375,35 @@ def test_the_prompt_forbids_connecting_two_instruments() -> None:
     assert "no targets, no predictions" in rendered
 
 
+def test_the_model_is_told_it_has_not_seen_the_code() -> None:
+    """The rule that was missing entirely, and the review that needed it.
+
+    SHODANN's third review of PR #61 recommended "examining whether your new
+    functions in METRICS.md have narrative explanations". METRICS.md is a
+    generated markdown leaderboard with no functions - and the model had less
+    than that sentence implies to work from, because this template supplies
+    `FILES_CHANGED` as a *count* and no file list at all. The only place the
+    name can have come from is `PR_TITLE`. A filename in a title became a file
+    with contents, then a file whose functions could be reviewed.
+
+    Nothing anywhere told the model it had not read the submission. The
+    groundedness block forbade inventing figures and causes and said nothing
+    about inventing *contents*, so this was not a rule being broken - it was a
+    rule that did not exist.
+
+    Asserted because the prose half of this fix had no guard when it was
+    written: deleting the paragraph left 418 tests green, which is EARLY_RUNS 13
+    exactly. `groundedness.constructs_claimed_in_data_files` covers the subset
+    that is mechanically checkable; this covers the instruction that covers the
+    rest.
+    """
+    rendered = " ".join(render_prompt(sample_context(), prompts_dir=PROMPTS).split())
+
+    assert "You have not seen this submission's code" in rendered
+    assert "no file list, no source, no diff" in rendered
+    assert "Do not describe the contents of a file" in rendered
+
+
 def test_the_streak_is_labelled_with_the_unit_it_actually_counts() -> None:
     """SHODANN said "your iteration streak of 18 commits" and was quoting us.
 

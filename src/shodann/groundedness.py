@@ -34,6 +34,7 @@ from .validator import ADVISORY, BLOCKING, Violation
 __all__ = [
     "BLOCKING_THRESHOLD",
     "check_groundedness",
+    "constructs_claimed_in_data_files",
     "ungrounded_attribution",
     "ungrounded_percentages",
     "ungrounded_tokens",
@@ -202,7 +203,11 @@ def check_groundedness(
     response: str, prompt: str, *, blocking_threshold: int = BLOCKING_THRESHOLD
 ) -> list[Violation]:
     """Report identifiers and figures the model supplied from outside its input."""
-    findings = _percentage_findings(response, prompt) + _attribution_findings(response, prompt)
+    findings = (
+        _percentage_findings(response, prompt)
+        + _attribution_findings(response, prompt)
+        + _construct_findings(response)
+    )
     invented = ungrounded_tokens(response, prompt)
     if not invented:
         return findings
@@ -273,6 +278,92 @@ def _attribution_findings(response: str, prompt: str) -> list[Violation]:
             "no template states and you were never shown. Report what each "
             "reading is; never say which part of a score it feeds, and never "
             "say that acting on one reading will move another.",
+            quoted,
+        )
+    ]
+
+
+_CODE_CONSTRUCTS = (
+    "function", "functions", "class", "classes", "method", "methods",
+    "docstring", "docstrings", "variable", "variables", "import", "imports",
+)
+
+_NON_CODE_SUFFIX = ("md", "json", "yml", "yaml", "toml", "txt", "cfg", "ini", "lock", "rst")
+
+_CONSTRUCTS = "|".join(_CODE_CONSTRUCTS)
+_SUFFIXES = "|".join(_NON_CODE_SUFFIX)
+
+_CONSTRUCT_IN_DATA_FILE = re.compile(
+    rf"\b(?:{_CONSTRUCTS})\b(?:\W+\w+){{0,3}}?\W+in\W+(?:the\s+)?([\w./-]+\.(?:{_SUFFIXES}))\b"
+    rf"|\b([\w./-]+\.(?:{_SUFFIXES}))(?:\'s|\u2019s)?\s+(?:\w+\s+){{0,2}}?(?:{_CONSTRUCTS})\b",
+    re.IGNORECASE,
+)
+
+
+def constructs_claimed_in_data_files(response: str) -> list[str]:
+    """Code constructs attributed to a file that cannot contain any.
+
+    The third fabrication class found by reading three consecutive reviews of
+    one pull request, and the one most likely to reach a beginner as an
+    instruction. SHODANN told the citizen:
+
+        "examining whether your new functions in METRICS.md have narrative
+        explanations"
+
+    `METRICS.md` is a generated markdown leaderboard. It has no functions.
+
+    The model had less to go on than that sentence implies, which is the part
+    worth recording: template 01 supplies `FILES_CHANGED` as a *count* and no
+    file list at all, so the only place the name could have come from is
+    `PR_TITLE`. A filename in a title became a file with contents, and then a
+    file with functions in it that could be reviewed for docstrings.
+
+    Not reachable by the other probes, and the module docstring predicted the
+    shape: "it cannot catch a mislabelled figure... a number that really was in
+    the prompt, under the wrong name." Here it is a *filename* that really was
+    in the prompt, with invented contents - so `ungrounded_tokens` sees a
+    grounded token and passes.
+
+    Checked without reference to the prompt, unlike its siblings. The other two
+    probes ask whether a claim was given; this one is false regardless of what
+    was given, because a `.md` file has no functions no matter what any template
+    says. Narrow on purpose: "describe no file's contents" is the rule and it is
+    not mechanically checkable, while this subset is always wrong and costs one
+    regex. The general rule is stated in template 01 where the model reads it.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for match in _CONSTRUCT_IN_DATA_FILE.finditer(_prose(response)):
+        phrase = " ".join(match.group(0).split())
+        lowered = phrase.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        found.append(phrase)
+    return found
+
+
+def _construct_findings(response: str) -> list[Violation]:
+    """Blocking. There is no version of this a citizen can use.
+
+    A beginner told to add docstrings to the functions in a markdown file will
+    open it, find no functions, and conclude they have misunderstood something.
+    The retry names the violation and the ordinary outcome is the model keeping
+    the advice and dropping the location it invented for it.
+    """
+    invented = constructs_claimed_in_data_files(response)
+    if not invented:
+        return []
+    quoted = ", ".join(f'"{phrase}"' for phrase in invented)
+    return [
+        Violation(
+            "invented_file_contents",
+            BLOCKING,
+            f"{quoted} attribute(s) code to a file that contains none. You were "
+            "given no file list and no source - only readings, counts and a "
+            "title - so you do not know what any file contains. Give the advice "
+            "without naming a location for it.",
             quoted,
         )
     ]
