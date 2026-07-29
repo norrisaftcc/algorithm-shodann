@@ -7,10 +7,10 @@
   },
   "clearance_level": 2,
   "first_submission": "2026-07-25T23:08:59Z",
-  "last_updated": "2026-07-29T01:03:20Z",
+  "last_updated": "2026-07-29T01:08:19Z",
   "baseline_established": true,
-  "pr_count": 17,
-  "iteration_streak": 17,
+  "pr_count": 18,
+  "iteration_streak": 18,
   "rage_state_encounters": 0,
   "last_metrics": {
     "coverage": 97.9,
@@ -22,9 +22,13 @@
     "lint_issues": 18,
     "syntax_errors": 0
   },
-  "last_velocity": 108.4,
-  "velocity_trend": "ascending",
+  "last_velocity": 12.68,
+  "velocity_trend": "descending",
   "velocity_history": [
+    {
+      "score": 12.68,
+      "date": "2026-07-29T01:08:19Z"
+    },
     {
       "score": 108.4,
       "date": "2026-07-29T01:03:20Z"
@@ -60,10 +64,6 @@
     {
       "score": 13.4,
       "date": "2026-07-26T01:16:58Z"
-    },
-    {
-      "score": 10.5,
-      "date": "2026-07-26T01:16:00Z"
     }
   ],
   "last_degradation": "no model configured",
