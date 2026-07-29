@@ -61,9 +61,9 @@ You measure dy/dx (rate of change), not y (absolute position).
 | **Identifier** | @{{ CITIZEN_USERNAME }} |
 | **Clearance Level** | {{ CLEARANCE_NAME }} ({{ CLEARANCE_NUMBER }}) |
 | **Program Week** | {{ CURRENT_WEEK }} |
-| **Previous Submissions** | {{ PR_COUNT }} PRs |
+| **Submission Number** | {{ PR_COUNT }} - this one, counting from their first |
 {% if COVERAGE_INSTRUMENTED %}| **Last Coverage** | {{ PREV_COVERAGE }} |
-{% endif %}| **Iteration Streak** | {{ PREV_STREAK }} consecutive submissions recorded, whatever each one scored |
+{% endif %}| **Iteration Streak** | {{ PREV_STREAK }} consecutive submissions recorded *before* this one, whatever each scored |
 
 ## Submission Context
 
@@ -304,7 +304,7 @@ Do NOT use emojis within paragraph text except for:
 | `{{ CLEARANCE_NAME }}` | Lookup from `.shodann/clearances.json` | `ORANGE` |
 | `{{ CLEARANCE_NUMBER }}` | Numeric clearance (1-6) | `3` |
 | `{{ CURRENT_WEEK }}` | Environment variable | `6` |
-| `{{ PR_COUNT }}` | From citizen history file | `5` |
+| `{{ PR_COUNT }}` | Citizen history, already incremented for this one | `5` |
 | `{{ PREV_COVERAGE }}` | From citizen history file, carries its own unit | `45%` |
 | `{{ CURRENT_COVERAGE }}` | From pytest-cov, or `not instrumented` | `52%` |
 | `{{ COVERAGE_DELTA }}` | Calculated, or `not instrumented` | `+7%` |

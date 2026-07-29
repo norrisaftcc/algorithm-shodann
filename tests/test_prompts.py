@@ -404,3 +404,28 @@ def test_the_streak_is_labelled_with_the_unit_it_actually_counts() -> None:
     assert "positive velocity" not in rendered, (
         "S1-23: the streak counts every submission, including one that scored below zero"
     )
+
+
+def test_the_two_submission_counters_do_not_contradict_each_other() -> None:
+    """SHODANN reviewed PR #61 and said both of these, one paragraph apart:
+
+        "The Algorithm observes sustained momentum across your 20th submission"
+        "This is your 19th consecutive submission recorded."
+
+    Both were faithful to the prompt, which is what makes it ours. `review()`
+    increments `pr_count` before assembling the context, so `PR_COUNT` arrives
+    as the current submission's number while `PREV_STREAK` arrives as the
+    stored, un-incremented streak - and S1-23 had just made the two counters
+    count the same events, so template 01 was handing the model two aliases one
+    apart with the post-increment one labelled "Previous Submissions".
+
+    Neither value changed. Both rows now say which of the two they are, because
+    the numbers were right and only the labels were lying.
+    """
+    rendered = " ".join(render_prompt(sample_context(), prompts_dir=PROMPTS).split())
+
+    assert "Previous Submissions" not in rendered, (
+        "a post-increment count is not a count of previous submissions"
+    )
+    assert "Submission Number" in rendered
+    assert "recorded *before* this one" in rendered, "the streak has to say it is prior"

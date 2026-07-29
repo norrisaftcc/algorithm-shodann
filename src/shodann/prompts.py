@@ -268,6 +268,21 @@ def build_context(
         "CLEARANCE_NAME": clearance_name(record.clearance_level),
         "CLEARANCE_NUMBER": record.clearance_level,
         "CURRENT_WEEK": current_week,
+        # Arrives *post*-increment: `review()` does `record.pr_count += 1` before
+        # calling here, so this is the number of the submission being reviewed,
+        # not a count of the ones before it. `PREV_STREAK` on the next line is
+        # the opposite - stored, un-incremented, genuinely prior.
+        #
+        # Harmless until S1-23 made the two counters count the same events, at
+        # which point the prompt was handing the model two aliases one apart and
+        # template 01 labelled the post-increment one "Previous Submissions".
+        # SHODANN reviewed PR #61 and reported both faithfully: "your 20th
+        # submission" and "This is your 19th consecutive submission recorded",
+        # in one paragraph. The model was right twice and the comment still
+        # contradicted itself, which is a labelling defect and not a model one.
+        # Renaming the row rather than changing either value: 20 really is the
+        # submission number, 19 really is the prior streak, and both are true
+        # once each says which it is.
         "PR_COUNT": record.pr_count,
         "COVERAGE_INSTRUMENTED": reports.coverage_instrumented,
         "PREV_COVERAGE": previous_coverage,
