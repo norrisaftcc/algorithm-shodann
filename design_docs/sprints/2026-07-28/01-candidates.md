@@ -33,6 +33,7 @@ stays the artifact it is and the question "is this done?" has one answer.
 | S1-15, S1-18, S1-19, S1-21, S1-22, S1-23, S1-38 | the ledger rung |
 | S1-16, S1-17, S1-39 | the ledger rung — **annotated, not corrected**; the figures stand and `discontinuities` records where the seams are |
 | S1-12, S1-14 | the METRICS.md rung — the producer, and the consent default it would otherwise have weaponised |
+| S1-45 | the review rung — the rules behind the style count now reach the prose, which is where `read_lint_issues` always said they belonged |
 | S1-30 | superseded by #56's platform matrix |
 
 **S1-44 is closed on the leaderboard only.** A seamed figure is now marked and

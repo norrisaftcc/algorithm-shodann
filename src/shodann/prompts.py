@@ -46,6 +46,7 @@ __all__ = [
     "UnsupportedTemplateSyntax",
     "build_context",
     "describe_history",
+    "describe_style_rules",
     "extract_template",
     "find_pseudo_syntax",
     "render_prompt",
@@ -303,6 +304,7 @@ def build_context(
         "SYNTAX_REPORT": _syntax_report(reports),
         "SYNTAX_MEASURED": reports.syntax_errors is not None,
         "SYNTAX_ERRORS": reports.syntax_errors,
+        "STYLE_RULES": describe_style_rules(reports),
         "STYLE_REPORT": _style_report(reports),
         "STYLE_MEASURED": reports.lint_issues is not None,
         "STYLE_ISSUE_COUNT": reports.lint_issues,
@@ -372,6 +374,42 @@ def _syntax_report(reports: AnalysisReports) -> str:
     if reports.syntax_errors:
         return f"{reports.syntax_errors} files could not be parsed."
     return "Every file parsed."
+
+
+def describe_style_rules(reports: AnalysisReports) -> str:
+    """The rules behind the style count, or a refusal to characterise it.
+
+    S1-45. The count alone made the model guess what was in it - categories, then
+    a fixable count, then a command that shows the citizen nothing. Naming the
+    rules is what makes the number reproducible: a citizen handed `RUF100` can
+    look it up or select it, where a citizen handed "23" and their own clean
+    `ruff check` has nothing to act on.
+
+    The absent case is a refusal rather than an empty list, for the same reason
+    every other reading here has one. "No breakdown available" invites the model
+    to supply one.
+    """
+    if reports.style_breakdown is None:
+        return (
+            "The rules behind this count were not recorded. Do not name, guess or "
+            "illustrate a rule or category, and do not say which kind of issue these are."
+        )
+    if not reports.style_breakdown:
+        return "No diagnostics, so no rules to report."
+
+    rules = ", ".join(f"`{code}` x{count}" for code, count in reports.style_breakdown)
+    fixable = (
+        f" {reports.style_fixable} of them are fixable by the tool itself."
+        if reports.style_fixable is not None
+        else ""
+    )
+    return (
+        f"Most frequent rules: {rules}.{fixable} Name only these rules; there may "
+        "be others in the count and you have not been shown them. This reading is "
+        "taken with the citizen's own lint configuration ignored, so their own "
+        "`ruff check` may report a different number - if you suggest running a "
+        "tool, name the rule rather than promising a count."
+    )
 
 
 def describe_history(record: CitizenRecord, result: VelocityResult) -> str:

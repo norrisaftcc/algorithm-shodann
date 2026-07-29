@@ -542,3 +542,40 @@ def test_no_streak_figure_reaches_the_model_from_anywhere() -> None:
     assert "minus one" not in rendered, "nor a way to derive it"
     # The trend is a genuinely separate reading and must survive.
     assert "Velocity trend:" in rendered
+
+
+def test_the_style_rules_reach_the_model_instead_of_being_guessed() -> None:
+    """S1-45, at the layer where the guessing happened.
+
+    Handed "23 style diagnostics" and nothing else, the model supplied the rest
+    in five of ten reviews: categories it invented, a fixable count it invented,
+    and a command that shows the citizen nothing. The rules were in `ruff.json`
+    the whole time.
+    """
+    reports = AnalysisReports(
+        coverage=52.0, lint_issues=23, complexity=0, syntax_errors=0,
+        tests_passed=436, tests_failed=0,
+        style_breakdown=[("RUF100", 8), ("ISC004", 5), ("C408", 4)], style_fixable=22,
+    )
+    rendered = render_prompt(sample_context(reports), prompts_dir=PROMPTS)
+
+    assert "`RUF100` x8" in rendered
+    assert "22 of them are fixable" in rendered
+    assert "Name only these rules" in rendered, "four rules are not the whole count"
+    assert "own lint configuration ignored" in rendered, (
+        "the citizen's own ruff check reports a different number and must not be promised one"
+    )
+
+
+def test_an_unrecorded_breakdown_refuses_rather_than_inviting_one() -> None:
+    """Absent is not zero here either, and the failure mode is specific: an
+    empty breakdown beside a real count is exactly the gap the model filled."""
+    reports = AnalysisReports(
+        coverage=52.0, lint_issues=23, complexity=0, syntax_errors=0,
+        tests_passed=436, tests_failed=0,
+    )
+    rendered = render_prompt(sample_context(reports), prompts_dir=PROMPTS)
+
+    assert "rules behind this count were not recorded" in rendered
+    assert "Do not name, guess or illustrate a rule" in rendered
+    assert "23 alignment opportunities" in rendered, "the count itself is still reported"

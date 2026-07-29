@@ -102,6 +102,8 @@ celebrate a syntax status. "No compilation barriers" is a claim you cannot make.
 ```
 
 {% if STYLE_MEASURED %}**Style Issues**: {{ STYLE_ISSUE_COUNT }} alignment opportunities
+
+{{ STYLE_RULES }}
 {% else %}**No style tool ran this cycle.** Do not report or imply a count of
 style issues, in either direction.
 {% endif %}

@@ -9,11 +9,13 @@ from __future__ import annotations
 import json
 
 from shodann.analysis import (
+    STYLE_RULES_SHOWN,
     TEST_REPORT,
     AnalysisReports,
     read_complexity,
     read_coverage,
     read_lint_issues,
+    read_style_breakdown,
     read_syntax_errors,
     read_test_outcomes,
 )
@@ -294,3 +296,73 @@ def test_the_tallies_reach_the_reports_object(tmp_path) -> None:
 
     assert (reports.tests_passed, reports.tests_failed) == (7, 2)
     assert reports.tests_instrumented
+
+
+# --- S1-45: the count was never the only thing in the file ------------------
+
+
+def test_the_rules_behind_the_style_count_are_read(tmp_path) -> None:
+    """S1-45. The prose was handed a total and invented the rest.
+
+    `read_lint_issues` says rule-level feedback "belongs in the review's prose,
+    where it can be explained". Nothing ever delivered it, so across five of ten
+    reviews of PR #61 the model supplied the missing half itself: guessed
+    categories ("likely spacing or naming conventions" - they are RUF100, ISC004
+    and C408), a guessed fixable count ("clear the 20 in one pass" against ruff's
+    reported 11 of 20), and a command that shows the citizen nothing.
+
+    The data was never missing. `ruff.json` carries `code` and `fix` on every
+    diagnostic, and this module parsed the file only to call `len()` on it.
+    """
+    report = tmp_path / "ruff.json"
+    report.write_text(
+        json.dumps([
+            {"code": "C408", "fix": {"applicability": "safe"}},
+            {"code": "C408", "fix": {"applicability": "safe"}},
+            {"code": "RUF100", "fix": None},
+            {"code": "I001", "fix": {"applicability": "safe"}},
+            {"code": "C408", "fix": None},
+        ]),
+        encoding="utf-8",
+    )
+
+    ranked, fixable = read_style_breakdown(report)
+
+    assert ranked[0] == ("C408", 3), "ranked by frequency, not by first appearance"
+    assert dict(ranked) == {"C408": 3, "RUF100": 1, "I001": 1}
+    assert fixable == 3
+
+
+def test_the_frozen_lint_count_is_untouched_by_the_breakdown(tmp_path) -> None:
+    """The whole legality of this change. `lint_issues` feeds the sqrt term and
+    PRD section 8 freezes it for cohort 1; the breakdown is an explanation of a
+    reading already taken, never a second reading and never a score input."""
+    report = tmp_path / "ruff.json"
+    report.write_text(
+        json.dumps([{"code": "C408", "fix": None}, {"code": "RUF100", "fix": None}]),
+        encoding="utf-8",
+    )
+
+    assert read_lint_issues(report) == 2, "the count is still every diagnostic"
+    reports = AnalysisReports.from_directory(tmp_path)
+    assert reports.lint_issues == 2
+    assert reports.style_breakdown == [("C408", 1), ("RUF100", 1)]
+
+
+def test_an_absent_report_gives_no_breakdown_rather_than_an_empty_one(tmp_path) -> None:
+    """Absent is not zero, here too. An empty list would read as 'no rules
+    matched', which is a measurement; `None` is 'ruff did not run'."""
+    assert read_style_breakdown(tmp_path / "missing.json") is None
+    assert AnalysisReports.from_directory(tmp_path).style_breakdown is None
+
+
+def test_only_a_bounded_number_of_rules_reaches_the_caller(tmp_path) -> None:
+    """A review is not a lint report. Four rules name a pattern; twenty would
+    turn Growth Opportunities into a transcript and blow the word cap."""
+    report = tmp_path / "ruff.json"
+    report.write_text(
+        json.dumps([{"code": f"X{i:03d}", "fix": None} for i in range(20)]), encoding="utf-8"
+    )
+
+    ranked, _ = read_style_breakdown(report)
+    assert len(ranked) == STYLE_RULES_SHOWN
