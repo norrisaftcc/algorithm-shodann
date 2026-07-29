@@ -507,3 +507,36 @@ def test_a_measured_zero_is_not_reported_as_an_absent_reading() -> None:
     assert "**Functions over the branch threshold**" in rendered, "a bare 'Complexity' has no unit"
     assert "is a measurement and a good one" in rendered
     assert "never describe a number you can see as missing" in rendered
+
+
+def test_no_streak_figure_reaches_the_model_from_anywhere() -> None:
+    """The whole prompt, not one row - which is why the first two fixes failed.
+
+    `iteration_streak` equals `pr_count` for every ledger this system writes
+    (S1-42), so any prompt carrying both hands the model two numbers for one
+    quantity, one apart. Three consecutive reviews reported both:
+
+        round 2  "your 20th submission" / "your 19th consecutive submission"
+        round 4  "Submission 20 lands"  / "This is your 19th consecutive submission"
+        round 7  "Across 20 submissions" / "across 19 consecutive submissions"
+
+    Round 2's fix relabelled the rows. Round 4's replaced the figure with "This
+    is Submission Number minus one", which handed over a subtraction instead of a
+    number, and the model did the subtraction. Round 7's contradiction survived
+    both because the *same figure* was still arriving through
+    `HISTORY_NARRATIVE`, which `describe_history` composed separately - one
+    answer in two places, found only by grepping the assembled prompt for the
+    number rather than the row.
+
+    Asserted over the rendered whole for that reason. A row-scoped assertion is
+    what let this run three times.
+    """
+    context = sample_context()
+    rendered = render_prompt(context, prompts_dir=PROMPTS)
+    streak = context["PREV_STREAK"]
+
+    assert streak, "the fixture must carry a non-zero streak or this proves nothing"
+    assert f"streak: {streak}" not in rendered.lower()
+    assert "minus one" not in rendered, "nor a way to derive it"
+    # The trend is a genuinely separate reading and must survive.
+    assert "Velocity trend:" in rendered

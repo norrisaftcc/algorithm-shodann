@@ -286,6 +286,13 @@ def build_context(
         "PR_COUNT": record.pr_count,
         "COVERAGE_INSTRUMENTED": reports.coverage_instrumented,
         "PREV_COVERAGE": previous_coverage,
+        # Retained as a context key with no template consumer, deliberately.
+        # No template renders it any more (S1-42: it is `PR_COUNT - 1` for
+        # every ledger this system writes, and three reviews reported both
+        # numbers as two facts). Kept so `build_context`'s output stays a
+        # superset of what any template might ask for, rather than removed
+        # and re-derived by whoever next wants a streak - the value is
+        # correct, it is only unfit to hand a model beside `PR_COUNT`.
         "PREV_STREAK": record.iteration_streak,
         "PR_TITLE": pr_title,
         "FILES_CHANGED": files_changed,
@@ -368,15 +375,28 @@ def _syntax_report(reports: AnalysisReports) -> str:
 
 
 def describe_history(record: CitizenRecord, result: VelocityResult) -> str:
-    """One or two sentences of context for the model. Facts only, no framing."""
+    """One or two sentences of context for the model. Facts only, no framing.
+
+    No streak figure, and it took three commits to get here. `iteration_streak`
+    equals `pr_count` for every ledger this system writes (S1-42), so handing
+    both over gives the model two numbers for one quantity one apart - and it
+    reliably reports both. The DATA-table row lost its number, then lost the
+    subtraction that replaced it, and the contradiction survived anyway because
+    the *same figure* was still arriving here. One answer in two places, which is
+    the failure this file's own comments keep naming.
+
+    The trend stays: `velocity_trend` is a genuinely separate reading, computed by
+    `compute_trend` over the newest three history entries, and nothing else in
+    the prompt carries it.
+    """
     if result.is_first_submission or record.pr_count <= 1:
         return (
             "This is the citizen's first submission. No previous metrics exist, "
             "so every delta is measured against a zero baseline."
         )
     return (
-        f"Submission number {record.pr_count}. Velocity trend: "
-        f"{record.velocity_trend.upper()}. Iteration streak: {record.iteration_streak}."
+        f"Submission number {record.pr_count}. "
+        f"Velocity trend: {record.velocity_trend.upper()}."
     )
 
 
