@@ -8,7 +8,7 @@ import json
 import pytest
 
 from shodann.capability import LOCAL_SMALL
-from shodann.llm import LLMConfig, LLMUnavailable, generate
+from shodann.llm import WIRE_ANTHROPIC, LLMConfig, LLMUnavailable, generate
 from shodann.review import (
     EXIT_DEGRADED,
     _safe_citizen,
@@ -669,3 +669,83 @@ def test_a_red_citizen_is_not_handed_the_knob(tmp_path) -> None:
     _register(tmp_path, {"octocat": "2"})
     body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
     assert ".shodann/clearances.json" not in body
+
+
+# --- the fallback provider ------------------------------------------------
+
+
+class _FakeAnthropic:
+    """Duck-typed stand-in for the SDK client, at the one call site."""
+
+    def __init__(self, text: str):
+        self._text, self.calls = text, 0
+        self.messages = self
+
+    def create(self, **_):
+        self.calls += 1
+        block = type("Block", (), {"type": "text", "text": self._text})()
+        return type("Message", (), {"content": [block], "stop_reason": "end_turn"})()
+
+
+HAIKU = LLMConfig(model="claude-haiku-4-5", api_key="sk-test", wire=WIRE_ANTHROPIC)
+
+
+def _unreachable(request, timeout=None):
+    raise OSError("no local model listening")
+
+
+def test_an_unreachable_primary_reaches_the_fallback(tmp_path) -> None:
+    """The case the fallback exists for: no local model, review still owed."""
+    sdk = _FakeAnthropic(GOOD_RESPONSE)
+
+    body = review(
+        EVENT, root=tmp_path, config=CONFIG, fallback=HAIKU,
+        opener=_unreachable, client=sdk, write_state=False,
+    )
+
+    assert sdk.calls == 1, "the fallback was asked exactly once"
+    assert "REDUCED ALLOCATION" not in body, "a served review is not a degraded one"
+
+
+def test_without_a_fallback_an_unreachable_primary_still_degrades(tmp_path) -> None:
+    body = review(
+        EVENT, root=tmp_path, config=CONFIG, fallback=None,
+        opener=_unreachable, write_state=False,
+    )
+    assert "REDUCED ALLOCATION" in body
+
+
+def test_a_contract_violation_does_not_spend_a_second_provider(tmp_path) -> None:
+    """The primary answered twice and neither answer was postable.
+
+    Falling back here buys a third attempt at a prompt the first model
+    understood perfectly well - it is the contract that is unmet, and a second
+    provider is not the missing piece.
+    """
+    def answers_badly(request, timeout=None):
+        payload = {"choices": [{"message": {"content": "not a review at all"}}]}
+        return io.BytesIO(json.dumps(payload).encode())
+
+    sdk = _FakeAnthropic(GOOD_RESPONSE)
+    body = review(
+        EVENT, root=tmp_path, config=CONFIG, fallback=HAIKU,
+        opener=answers_badly, client=sdk, write_state=False,
+    )
+
+    assert sdk.calls == 0, "unreachability is the trigger, not a bad answer"
+    assert "REDUCED ALLOCATION" in body
+
+
+def test_an_explicit_config_never_picks_up_a_key_from_the_environment(
+    tmp_path, monkeypatch
+) -> None:
+    """What keeps `scripts/dev.py render` offline on a machine with a key.
+
+    Only a primary that came from the environment gets the environment's
+    fallback; an explicit config means an explicit fallback or none.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-would-be-billed")
+
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert "REDUCED ALLOCATION" in body, "no model configured, and none reached for"

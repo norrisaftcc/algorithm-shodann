@@ -30,7 +30,7 @@ from .analysis import AnalysisReports
 from .capability import FULL, Capabilities, refusal_reason
 from .clearance import clearance_disclosure
 from .groundedness import check_groundedness
-from .llm import LLMConfig, LLMUnavailable, generate
+from .llm import LLMConfig, LLMUnavailable, fallback_from_env, generate
 from .prompts import build_context, render_prompt
 from .state import (
     CitizenRecord,
@@ -381,14 +381,18 @@ def _inspect(response: str, prompt: str, spec: ResponseSpec) -> list:
 
 
 def _synthesise(
-    prompt: str, spec: ResponseSpec, config: LLMConfig, opener=None
+    prompt: str, spec: ResponseSpec, config: LLMConfig, opener=None, client=None
 ) -> str:
     """Generate, validate, retry once naming the violations, then give up.
 
     Giving up is not failure - it hands control back to the caller, which has
     a comment ready that does not need a model at all.
     """
-    transport = {"opener": opener} if opener is not None else {}
+    transport = {}
+    if opener is not None:
+        transport["opener"] = opener
+    if client is not None:
+        transport["client"] = client
 
     response = generate(prompt, config, **transport)
     findings = _inspect(response, prompt, spec)
@@ -398,8 +402,43 @@ def _synthesise(
     retry = f"{prompt}\n\n{format_retry_instruction(findings)}"
     second = generate(retry, config, **transport)
     if blocks_posting(_inspect(second, prompt, spec)):
-        raise LLMUnavailable("response violated the output contract twice")
+        raise _ContractViolation("response violated the output contract twice")
     return second
+
+
+class _ContractViolation(LLMUnavailable):
+    """The model answered, twice, and neither answer was postable.
+
+    A subclass so the fallback can tell it apart from a model it could not
+    reach. Falling back here would buy a third attempt at a prompt the first
+    model understood perfectly well - it is the *contract* that is not being
+    met, and a second provider is not the missing piece. Reaching for one
+    would spend a second bill to reach the same comment.
+    """
+
+
+def _synthesise_chain(
+    prompt: str,
+    spec: ResponseSpec,
+    config: LLMConfig,
+    fallback: LLMConfig | None,
+    opener=None,
+    client=None,
+) -> str:
+    """The configured model, then the fallback if it could not be reached.
+
+    "No local model available" is the case this exists for, so the trigger is
+    unreachability and nothing else. A contract violation is deliberately not
+    a trigger; see `_ContractViolation`.
+    """
+    try:
+        return _synthesise(prompt, spec, config, opener=opener, client=client)
+    except _ContractViolation:
+        raise
+    except LLMUnavailable:
+        if fallback is None or not fallback.configured:
+            raise
+    return _synthesise(prompt, spec, fallback, opener=opener, client=client)
 
 
 def review(
@@ -408,14 +447,23 @@ def review(
     root: Path | str = ".",
     reports_dir: Path | str | None = None,
     config: LLMConfig | None = None,
+    fallback: LLMConfig | None = None,
     capabilities: Capabilities = FULL,
     mode: str = "standard",
     opener=None,
+    client=None,
     write_state: bool = True,
 ) -> str:
     """Produce the comment body for one pull request."""
     facts = pr_facts(event)
-    config = config or LLMConfig.from_env()
+    if config is None:
+        config = LLMConfig.from_env()
+        # Only reach for the environment's fallback when the primary came
+        # from there too. An explicit config means an explicit fallback or
+        # none - which is what keeps `scripts/render_review.py` offline even
+        # on a machine with a key exported.
+        if fallback is None:
+            fallback = fallback_from_env()
 
     reports = (
         AnalysisReports.from_directory(reports_dir)
@@ -476,7 +524,7 @@ def review(
         # will not once SHODANN reviews someone else's repo, and at that point
         # the templates need to ship as package data.
         prompt = render_prompt(context)
-        body = _synthesise(prompt, spec, config, opener=opener)
+        body = _synthesise_chain(prompt, spec, config, fallback, opener=opener, client=client)
     except _AlreadyResolved:
         pass
     except LLMUnavailable as unavailable:

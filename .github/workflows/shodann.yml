@@ -218,6 +218,11 @@ jobs:
           SHODANN_LLM_BASE_URL: ${{ vars.SHODANN_LLM_BASE_URL }}
           SHODANN_LLM_MODEL: ${{ vars.SHODANN_LLM_MODEL }}
           SHODANN_LLM_API_KEY: ${{ secrets.SHODANN_LLM_API_KEY }}
+          # The fallback, used only when the configured model cannot be
+          # reached. Absent key, no fallback - and the citizen still gets the
+          # facts-only comment, exactly as before.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SHODANN_FALLBACK_MODEL: ${{ vars.SHODANN_FALLBACK_MODEL }}
         run: |
           # --dry-run: a review never writes state. Persistence happens on
           # merge, in the step below.

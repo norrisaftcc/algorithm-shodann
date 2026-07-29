@@ -177,6 +177,19 @@ def test_the_pinned_versions_match_the_project_metadata(workflow: str) -> None:
         assert in_workflow.group(1) == in_project.group(1), f"{tool} pins disagree"
 
 
+def test_the_fallback_key_reaches_the_step_that_composes(workflow: str) -> None:
+    """A fallback nothing maps into the environment is a fallback that never fires.
+
+    This is the defect class `EARLY_RUNS.md` collects: the workflow ran green,
+    the code was correct, and the two never agreed about what was passed
+    between them. `--reports` was dropped by a silent string replacement the
+    same way.
+    """
+    compose = workflow.split("Compose the review")[1].split("- name:")[0]
+    assert "ANTHROPIC_API_KEY" in compose, "the fallback provider needs its key"
+    assert "secrets.ANTHROPIC_API_KEY" in compose, "a key is a secret, never a variable"
+
+
 def test_no_citizen_text_is_interpolated_into_a_shell(workflow: str) -> None:
     """The defect in design_docs/shodann-core.yml:131, asserted against."""
     for field in ("pull_request.title", "pull_request.body"):
