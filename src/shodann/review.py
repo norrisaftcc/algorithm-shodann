@@ -40,6 +40,7 @@ from .state import (
     save_citizen_history,
 )
 from .validator import (
+    BLOCKING,
     SPECS,
     ResponseSpec,
     blocks_posting,
@@ -450,9 +451,30 @@ def _synthesise(
 
     retry = f"{prompt}\n\n{format_retry_instruction(findings)}"
     second = generate(retry, config, **transport)
-    if blocks_posting(_inspect(second, prompt, spec)):
+    final = _inspect(second, prompt, spec)
+    if blocks_posting(final):
+        _log_violations(findings, final)
         raise _ContractViolation("response violated the output contract twice")
     return second
+
+
+def _log_violations(first: list, second: list) -> None:
+    """Say which rules were broken, on the one path that used to say nothing.
+
+    `_synthesise` computed these findings twice, spent them on the retry
+    instruction, and dropped both sets. So the first time a real model
+    answered - PR #60, `claude-haiku-4-5` - the degraded comment said
+    "response violated the output contract twice" and the run held no record
+    of *which* contract, which is the one fact needed to do anything about it.
+
+    Codes only, never messages or evidence. `Violation.code` is a fixed slug
+    from this program; `message` and `evidence` quote the model's output,
+    which is derived from a citizen-authored PR title. The rule that keeps
+    `main` from echoing the body applies here for the same reason.
+    """
+    for label, findings in (("attempt 1", first), ("attempt 2", second)):
+        codes = sorted({finding.code for finding in findings if finding.severity == BLOCKING})
+        sys.stderr.write(f"SHODANN {label} blocked by: {', '.join(codes) or 'nothing'}\n")
 
 
 class _ContractViolation(LLMUnavailable):

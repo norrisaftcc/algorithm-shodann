@@ -947,3 +947,36 @@ def test_a_red_suite_is_never_told_nothing_raised_an_opportunity(tmp_path) -> No
     assert "11 in a pre-success state" in body
     assert "Nothing in these readings raised one" not in body
     assert not blocks_posting(validate(body, REDUCED_ALLOCATION))
+
+
+def test_giving_up_on_the_contract_says_which_rules_broke(tmp_path, capsys) -> None:
+    """The one path in the program that used to fail without saying anything.
+
+    PR #60 was the first time a real model answered. It failed the contract
+    twice, the citizen got REDUCED ALLOCATION, and the run recorded only
+    "response violated the output contract twice" - which names the outcome
+    and not one thing about the cause.
+    """
+    bad = GOOD_RESPONSE.replace("The Algorithm suggests naming", "You should rename")
+
+    review(EVENT, root=tmp_path, config=CONFIG, opener=responder(bad, bad), write_state=False)
+
+    logged = capsys.readouterr().err
+    assert "attempt 1 blocked by: forbidden_vocabulary" in logged
+    assert "attempt 2 blocked by: forbidden_vocabulary" in logged
+
+
+def test_the_log_names_codes_and_never_quotes_the_model(tmp_path, capsys) -> None:
+    """`main` refuses to echo the body because a PR title reaches it.
+
+    A violation's `message` and `evidence` quote the model's own output, which
+    is written from that same citizen-authored title. `code` is a slug this
+    program chose, so it is the only part safe to put in a CI log.
+    """
+    bad = GOOD_RESPONSE.replace("The Algorithm suggests naming", "You should rename")
+
+    review(EVENT, root=tmp_path, config=CONFIG, opener=responder(bad, bad), write_state=False)
+
+    logged = capsys.readouterr().err
+    assert "You should" not in logged, "the evidence quotes the model, which quotes the citizen"
+    assert "rename" not in logged

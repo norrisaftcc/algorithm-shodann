@@ -259,6 +259,30 @@ Two other things on this page were caught by the same move. The word-cap regress
 
 ---
 
+## 14. The first time a model answered, it failed — and the run kept no record of why
+
+**Where:** PR #60, 2026-07-29. The first review ever composed with a model key in the repository secrets. `SHODANN_LLM_*` unset, so the primary was unconfigured and the chain fell through to `claude-haiku-4-5` exactly as designed.
+
+**What SHODANN said:**
+
+> **Citizen**: @norrisaftcc | **Clearance**: ORANGE | **Status**: REDUCED ALLOCATION
+>
+> Synthesis was unavailable this cycle (**response violated the output contract twice**)
+
+Three things worked for the first time in that comment: the ORANGE disclosure footer, the coverage reading, and `Tests: 353 passed, none in a pre-success state` — a real tally from a real `tests.xml`, which is the whole of entry 12's rung.
+
+**What did not:** the model was reached, answered twice, and both answers were unpostable. That is a legitimate outcome and the fallback handled it correctly. The defect is what happened next: **nothing recorded which rule was broken.** `_synthesise` computes the findings twice, spends the first set on the retry instruction, and drops both. So the log said "violated the output contract twice", which names the outcome and not one thing about the cause.
+
+**Why it hid until now:** this path had never executed. Every previous review degraded with `no model configured`, so the branch that discards the findings was unreachable in production while remaining fully covered by tests — the tests supply their own violations and never ask what the program *said* about them.
+
+**A second thing the same run exposed.** The job was **green**. `.github/workflows/shodann.yml` carries a step named "Surface the fault to the maintainer", gated on `steps.compose.outcome == 'failure'`, and its own comment promises "the job still turns red at the end." It never has. `EXIT_DEGRADED` is returned only when `main` catches an exception; a review that degrades *gracefully* returns a body and exits 0. Graceful degradation and silent degradation had been the same code path since the exit code was introduced.
+
+**What changed:** `_log_violations` writes the blocking `Violation.code` slugs for both attempts to stderr. Codes only — `message` and `evidence` quote the model's output, which is written from a citizen-authored PR title, and the rule that stops `main` echoing the body applies for the same reason.
+
+The exit code is **deliberately unchanged pending a decision**, because it is not merely a bug: under one-repo-per-student, a red check appears on the *student's* pull request, and a failed model call is the one thing `PRD.md` §8 insists must not reflect on their submission.
+
+---
+
 ## What the pattern says
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
