@@ -222,13 +222,177 @@ That rule governs student distress, academic-integrity concerns, and accessibili
 
 ---
 
-## What the pattern says
+## 12. The citizen could ship us their own coverage figure
+
+**Where:** reading the analysis job while wiring the test tallies into it, 2026-07-29. Then reproduced in a scratch repository before a line was changed, because a plausible exploit and a real one are different claims.
+
+**What was wrong:** nothing deleted the report files before the tools wrote them. `ruff check ... > ruff.json` truncates first, so ruff was safe by accident of shell syntax. Coverage was not. Its step ends in `test -f coverage.json || echo '{}' > coverage.json`, a guard for the case where pytest-cov produced nothing.
+
+So: commit a `coverage.json` claiming 97.4%, then break your own test collection with one bad import. pytest exits on a collection error, pytest-cov writes no report, `|| true` swallows the exit code, the `test -f` guard finds the *committed* file and leaves it alone, and the upload step hands it to the privileged job as a measurement. Coverage is the 2.0-weighted term.
+
+```
+$ pytest --cov=src --cov-report=json:coverage.json -q
+ERROR test_broken.py - ModuleNotFoundError: No module named 'does_not_exist_anywhere'
+$ cat coverage.json
+{"totals": {"percent_covered": 97.4}}
+```
+
+**Why it kept hiding:** it is the third instance of one rule — *anything feeding the score must not be choosable by the citizen being scored* — and the first two (entry 10) were both about **flags**. This one is about a **file**, so no amount of staring at `--isolated` and `--cov=src` finds it. The guard that made it exploitable was itself defensive: someone thought about pytest-cov failing and handled it, and the handler trusted the working directory.
+
+**What changed:** `rm -f coverage.json ruff.json tests.xml` as its own step before the tools run, with a contract test that asserts both the deletion and its position relative to the invocations. On the freeze clock, like entry 10: free to fix now, impossible after cohort 1's first submission.
+
+---
+
+## 13. The guard that passed with the guard removed
+
+**Where:** the same day, verifying the above by reverting each new guard against the defect it was written for.
+
+Reading a citizen-produced `tests.xml` meant parsing XML in the job that holds the write token and the model key, so it got a check that refuses any document carrying a `<!DOCTYPE>` or `<!ENTITY>` declaration, and a test that feeds it a billion-laughs bomb and asserts the reader returns *not measured*.
+
+**The test passed with the check deleted.** CPython's expat caps internal entity expansion on its own, so the bomb failed to parse either way and the assertion could not tell the two situations apart. Eight other probes that day failed correctly; this one had been green from the moment it was written, against nothing.
+
+Rewritten to feed in a **valid, parseable** document — one that any reader which looked would answer `(7, 2)` for — whose only disqualifying feature is the declaration. Deleting the check now turns it red.
+
+**The generalisation, and it is the sharper half of this file:** *a test written against a defect you have already fixed proves nothing until you put the defect back.* Entry 9's lesson was that a green suite can pass through a broken system. This one is narrower and worse — a green suite can pass through a guard that does not exist. The cost of finding out is one revert and one test run, and there is no substitute, because the failure mode is silence.
+
+Two other things on this page were caught by the same move. The word-cap regression test at `tests/test_review.py:768` passed against the defect it was written for, because an empty temporary repository produces a comment 37 words shorter than a real one. And the first version of this session's ordering assertion passed a mutation that only *renamed* the deletion step without moving it — the probe was wrong, not the test, which is its own reminder to check what a passing probe actually proved.
+
+---
+
+## 14. The first time a model answered, it failed — and the run kept no record of why
+
+**Where:** PR #60, 2026-07-29. The first review ever composed with a model key in the repository secrets. `SHODANN_LLM_*` unset, so the primary was unconfigured and the chain fell through to `claude-haiku-4-5` exactly as designed.
+
+**What SHODANN said:**
+
+> **Citizen**: @norrisaftcc | **Clearance**: ORANGE | **Status**: REDUCED ALLOCATION
+>
+> Synthesis was unavailable this cycle (**response violated the output contract twice**)
+
+Three things worked for the first time in that comment: the ORANGE disclosure footer, the coverage reading, and `Tests: 353 passed, none in a pre-success state` — a real tally from a real `tests.xml`, which is the whole of entry 12's rung.
+
+**What did not:** the model was reached, answered twice, and both answers were unpostable. That is a legitimate outcome and the fallback handled it correctly. The defect is what happened next: **nothing recorded which rule was broken.** `_synthesise` computes the findings twice, spends the first set on the retry instruction, and drops both. So the log said "violated the output contract twice", which names the outcome and not one thing about the cause.
+
+**Why it hid until now:** this path had never executed. Every previous review degraded with `no model configured`, so the branch that discards the findings was unreachable in production while remaining fully covered by tests — the tests supply their own violations and never ask what the program *said* about them.
+
+**A second thing the same run exposed.** The job was **green**. `.github/workflows/shodann.yml` carries a step named "Surface the fault to the maintainer", gated on `steps.compose.outcome == 'failure'`, and its own comment promises "the job still turns red at the end." It never has. `EXIT_DEGRADED` is returned only when `main` catches an exception; a review that degrades *gracefully* returns a body and exits 0. Graceful degradation and silent degradation had been the same code path since the exit code was introduced.
+
+**What changed:** `_log_violations` writes the blocking `Violation.code` slugs for both attempts to stderr. Codes only — `message` and `evidence` quote the model's output, which is written from a citizen-authored PR title, and the rule that stops `main` echoing the body applies for the same reason.
+
+**And on the very next run it answered the question:**
+
+```
+SHODANN attempt 1 blocked by: missing_section
+SHODANN attempt 2 blocked by: missing_section
+```
+
+Haiku is omitting a required heading, twice, including on a retry that names the violation. The FORMAT layer asks for four sections in a fenced example and the spec requires the same four, so the prompt and the checker agree — this is a model that will not reliably emit an empty-feeling section, not a contract two documents disagree about.
+
+That log line also exposed the *next* gap immediately: it said `missing_section` and could not say **which** section, which is half a finding. Now named, via a deliberately narrow allowlist — `_check_headings` builds that evidence by subtracting the headings it found from the ones the spec requires, so what survives is this program's own constants and cannot carry model output. `section_order` looks like it qualifies and does not: its message reports the order it *found*, which is the model's.
+
+**The degradation is now announced, and the job still passes.** `::warning::` naming the reason, exit 0. Red would be the wrong instrument: under one-repo-per-student the check lands on the *student's* pull request, and a failed model call is the one thing `PRD.md` §8 insists must not reflect on their submission. A warning is visible in the Actions tab, where the maintainer is, and is not a verdict, where the student is.
+
+**A small dividend.** Adding that call took `review` to eleven branches and tripped `C901` — the first time the complexity gate wired up two commits earlier has fired on this project's own code. It was fixed by moving the falsy check inside the callee rather than by raising the threshold, which is the whole argument for the metric, made by the metric.
+
+---
+
+## 15. The fence that made synthesis impossible — and the first review that worked
+
+**Where:** PR #60, 2026-07-29, chasing entry 14's `missing_section` to ground.
+
+Entry 14's logging said `missing_section` twice and, once it learned to name them, said this:
+
+```
+missing_section (Shipping Velocity Report, Algorithm-Approved Patterns,
+Growth Opportunities, Recommended Iteration)
+```
+
+**All four.** A model omitting a section it has nothing to say in drops one. Losing the entire heading list means the checker could not see the response at all — a different failure wearing the same code, and the count was the only thing that distinguished them.
+
+**What was wrong.** LAYER 4 says *"Generate your response using EXACTLY this structure"* and then shows the structure inside a ` ```markdown ` fence, because that is how you make an example legible. A model that complies with the **illustration** returns its review inside a fence too. `_headings` strips fenced blocks before looking for headings — and that guard is correct, and was itself paid for: a model once illustrated a fix with `# Before` / `# After` inside a fenced example and the validator invented two phantom sections out of the student's own code.
+
+Two correct behaviours, conflicting only when the fence *is* the whole response. Reproduced locally in one line by wrapping a known-good response and getting the byte-identical violation.
+
+**SHODANN could not synthesise a review at all while this held.** Any model, any citizen, every time. It had been true since the validator and the template were first written against each other, and it was invisible because the fallback caught it — the system had a fluent story for its own failure, in SHODANN's own voice, and the story blamed the model.
+
+**What changed:** `unwrap_fenced_response` unwraps only a fence that is the entire response, so a review containing a code example is untouched. The prompt also now says not to wrap, which helps models nobody debugs.
+
+### And then it worked
+
+The first synthesised SHODANN review in the project's history, on the very next run. Every figure in it traces to an instrument, verified against the tree afterwards:
+
+| Claim | Measured | |
+|---|---|---|
+| "All 363 tests pass" | 363 passed | ✓ |
+| "20 style diagnostics" | 20 | ✓ |
+| "Zero syntax barriers" | 0 | ✓ |
+| "97.9% → 97.5%" | ledger 97.9, measured 97.5 | ✓ |
+| "your 19th submission" | pr_count 18 + 1 | ✓ |
+
+The hard/soft split held on its first real outing: the model invented no number. Three of those five figures did not exist anywhere in the system a day earlier — the tallies and the syntax count are entry 12's rung, reaching a citizen.
+
+**Two things in the prose were still wrong**, and neither is a hallucination:
+
+- *"your velocity score of 119.03 reflects the substantial work across 16 files and 1,302 lines added."* **`loc` is not a term in the composite.** The sentence teaches a citizen that writing more lines raises their score, which is the exact behaviour `PRD.md` §7 forbids the system from rewarding — the lines-of-code metric, taught by the machine built to refuse it, in its first sentence about itself.
+- *"First tests are hardest tests — you've moved past that threshold"*, said to a citizen with 363 tests. `test_the_phrase_is_not_repeated_to_veterans` stops the *engine* doing this. The model is not bound by the engine, and a phrase reserved for one moment stops meaning anything once it is spent on any other.
+
+**The groundedness probe cannot see either**, and says so itself: every number really was in the prompt, and neither claim contains a novel backticked identifier. Its docstring named this limit — *"it cannot catch a mislabelled figure"* — before there was an example. Now there is one, and it is the most important sentence in the review.
+
+Both are fixed in the prompt, which is the only layer that can. The score's terms are now stated where the score is stated, with lines and files explicitly excluded.
+
+**Status: both guards held on the next run** — the score was attributed to "tests added, docstrings written, and lint opportunities cleared", all real composite terms, and the reserved phrase did not reappear. See entry 16, which is what that same review got wrong instead.
+
+---
+
+## 16. Two instruments, one invented mechanism
+
+**Where:** PR #60, the second synthesised review, minutes after entry 15's guards shipped.
+
+Both guards held. Every figure was again exact — 365 tests, 20 style diagnostics, 0 syntax errors, 97.9% → 97.5%. And the review still contained two false claims, neither of them a fabricated *number*:
+
+> **"Select one of those 20 style diagnostics ... this gets you back to 98%+ coverage territory."**
+
+Style diagnostics and coverage are unrelated instruments. Cleaning lint changes coverage by exactly nothing, and 98%+ is a figure that appears nowhere — this citizen has never been above 97.9%. It sits in **Recommended Iteration**, the one section a student is told to act on, so the failure mode is a citizen doing twenty minutes of work to reach a number that cannot move.
+
+> **"The slight dip suggests complexity may have increased faster than test coverage."**
+
+The measured C901 delta is **0**. The DATA layer says so on the row above.
+
+**What this run actually taught.** Entry 15's fix was instance-shaped: it named the score's terms because the score's terms were what got misused. The very next review produced two more of the same species in two different places. Patching instances loses — the class is *inventing causation between independent measurements*, and prose instructions against a class are unfalsifiable by anything except the next run.
+
+**So this one got a mechanism.** `groundedness.py` had named this exact limit in its own docstring since it was written — *"it cannot catch a mislabelled figure"* — and the limit was drawn too narrowly. It checked backticked identifiers only. It now also checks **percentages**: any figure the response states that no tool report contains.
+
+Blocking from the first occurrence, unlike the identifier probe. One novel identifier is a suggestion (`consider naming it user_age`) and rejecting it would reject good advice; one novel percentage is a measurement nobody took, and there is no reading of it that helps a citizen. Rounding still passes — a model writing 97% for a measured 97.5% is being readable — while 98 against 97.5 does not, which is precisely the case that mattered.
+
+This would also have caught entry 2 ("a whopping 0.0%") and entry 6 ("from 0% to 218 complexity"). Three of the sixteen entries on this page are one missing check.
+
+**The causal half is still prose**, and still unverifiable: the prompt now says the readings are separate instruments and may not be connected, that a delta of 0 means nothing moved, and that no figure may be predicted. Being unable to test that is the honest state of it — but the figure probe now catches every *consequence* of the causal error that carries a number, which is most of them.
+
+**The third review, minutes later, was clean.** No invented figure, no target, no predicted percentage — and it said outright *"This isn't about reaching a target."* Every number exact again: 371 tests, 19 style diagnostics, 0 syntax errors, 97.9% → 97.4%.
+
+### The one thing left, and it was ours
+
+That review said *"Your iteration streak of **18 commits**"*. `save_citizen_history` increments `iteration_streak` once per submission that scored above zero — consecutive **submissions**, never commits. The number was right and the unit was wrong.
+
+The model did not invent it. `prompts/01_base_shodann_prompt.md` line 66 read:
+
+```
+| **Iteration Streak** | {{ PREV_STREAK }} commits |
+```
+
+It was quoting us, faithfully, and it had no way to know better — the prompt is the only description of that field it will ever see.
+
+**This is the finding, not the label.** Three reviews in a row were audited by comparing every figure against the tools, and this one passed that audit: the number *was* 18. What it failed was a check nobody was running — whether the **unit** attached to a real number is the unit the field actually counts. A mislabelled figure and a fabricated one look identical from outside; the entire difference is whose text the label came from, and the reflex is to file it against the model.
+
+Fixed in the prompt. The general form is worth carrying: **before blaming a model for a claim, grep the prompt for it.**
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
 
-Two of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that caught a comment disagreeing with itself.
+**Three** of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that catches a comment disagreeing with itself — and it caught one again on the day entry 12 was written. Wiring the real test tallies in put a truthful line reading *"0 passed, 11 in a pre-success state"* directly above a section that said *"Nothing in these readings raised one."* Both sentences were true of their own inputs, because the velocity engine has never been shown a pass/fail count. The pair was nonsense, no assertion could see it, and one read of the rendered comment could not miss it.
 
-The last two needed a different move again: **reading with something withheld.** Entry 10 came from five surveyors who each saw one scope and could not see the others, plus a critic asked only what falls between them. Entry 11 came from readers who were given a document and denied any knowledge of what it was for. Every technique on this page works by removing context from the reader — running the system removes the author's knowledge of what it *should* do, and a blind read removes the reader's ability to supply what the document failed to say. A reviewer who knows the intent will unconsciously fill the gap and report that there wasn't one.
+Entry 13 adds a fourth technique, and it is the cheapest one here: **put the defect back.** A guard is a claim that something would otherwise break, and the claim is untested until you break it. One revert and one test run per guard, and the reward is finding the assertions that have been green since birth against nothing at all.
+
+Two of them needed a different move again: **reading with something withheld.** Entry 10 came from five surveyors who each saw one scope and could not see the others, plus a critic asked only what falls between them. Entry 11 came from readers who were given a document and denied any knowledge of what it was for. Every technique on this page works by removing context from the reader — running the system removes the author's knowledge of what it *should* do, and a blind read removes the reader's ability to supply what the document failed to say. A reviewer who knows the intent will unconsciously fill the gap and report that there wasn't one.
 
 The two agents caught different things and neither caught these: `oracle-warden` verifies what is checkable mechanically, `clive-prompt-warden` verifies what is consistent across documents. Neither can see what only appears when a real event payload meets a real runner.
 

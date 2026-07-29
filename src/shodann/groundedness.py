@@ -34,6 +34,7 @@ from .validator import ADVISORY, BLOCKING, Violation
 __all__ = [
     "BLOCKING_THRESHOLD",
     "check_groundedness",
+    "ungrounded_percentages",
     "ungrounded_tokens",
 ]
 
@@ -87,13 +88,62 @@ def ungrounded_tokens(response: str, prompt: str) -> list[str]:
     return found
 
 
+_PERCENTAGE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
+
+ROUNDING_TOLERANCE = 0.05
+"""How close a quoted figure must be to a real one to count as the same figure."""
+
+
+def ungrounded_percentages(response: str, prompt: str) -> list[str]:
+    """Percentages the response states that the prompt never contained.
+
+    The one class of fabrication this file said it could not catch. Its own
+    docstring named the limit - "it cannot catch a mislabelled figure" - and
+    then the second synthesised review produced one in the section a citizen
+    is most likely to act on:
+
+        "gets you back to 98%+ coverage territory"
+
+    said of a *style* cleanup, to a citizen whose coverage read 97.5% and had
+    never been above 97.9%. Style diagnostics and coverage are unrelated
+    instruments, so the sentence invented both a figure and a mechanism, and
+    the identifier probe saw nothing because no identifier was quoted.
+
+    A percentage is the unit this product is most about, and unlike an
+    identifier it is never legitimately a *suggestion*: "consider naming it
+    `user_age`" is good advice, and "this will get you to 98%" is a
+    prediction the tools did not make.
+
+    Rounding is allowed. A model writing 97% for a measured 97.5% is being
+    readable, not inventive, so a figure matching the integer part of a real
+    one passes. 98 against 97.5 does not, which is the case that mattered.
+    """
+    real = [float(value) for value in _PERCENTAGE.findall(prompt)]
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for quoted in _PERCENTAGE.findall(_prose(response)):
+        value = float(quoted)
+        if quoted in seen:
+            continue
+        grounded = any(
+            abs(value - candidate) < ROUNDING_TOLERANCE or int(value) == int(candidate)
+            for candidate in real
+        )
+        if not grounded:
+            seen.add(quoted)
+            found.append(f"{quoted}%")
+    return found
+
+
 def check_groundedness(
     response: str, prompt: str, *, blocking_threshold: int = BLOCKING_THRESHOLD
 ) -> list[Violation]:
-    """Report identifiers the model supplied from outside its input."""
+    """Report identifiers and figures the model supplied from outside its input."""
+    findings = _percentage_findings(response, prompt)
     invented = ungrounded_tokens(response, prompt)
     if not invented:
-        return []
+        return findings
 
     quoted = ", ".join(f"`{token}`" for token in invented)
     severity = BLOCKING if len(invented) >= blocking_threshold else ADVISORY
@@ -103,11 +153,37 @@ def check_groundedness(
         else "Acceptable as a suggestion; not acceptable as a claim about their code."
     )
     return [
+        *findings,
         Violation(
             "ungrounded_reference",
             severity,
             f"{len(invented)} identifier(s) not present in the submission data: "
             f"{quoted}. {detail}",
             quoted,
+        ),
+    ]
+
+
+def _percentage_findings(response: str, prompt: str) -> list[Violation]:
+    """Blocking from the first one, unlike the identifier probe.
+
+    One novel identifier is a suggestion and blocking on it would reject good
+    advice. One novel percentage is a measurement nobody took, and there is no
+    reading of it that helps a citizen. The retry names the violation, so the
+    ordinary outcome is the model dropping a claim it should not have made -
+    and if it fails twice the citizen gets MINIMAL RESPONSE, which carries the
+    real figures and simply does not interpret them.
+    """
+    invented = ungrounded_percentages(response, prompt)
+    if not invented:
+        return []
+    return [
+        Violation(
+            "ungrounded_figure",
+            BLOCKING,
+            f"{', '.join(invented)} appear(s) in no tool report. State measured "
+            "figures only; never predict one, and never imply a figure the "
+            "instruments did not produce.",
+            ", ".join(invented),
         )
     ]

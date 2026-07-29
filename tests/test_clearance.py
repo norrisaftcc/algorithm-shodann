@@ -15,9 +15,10 @@ from pathlib import Path
 
 import pytest
 
+from shodann.analysis import AnalysisReports
 from shodann.clearance import clearance_disclosure, clearance_instructions
 from shodann.prompts import build_context, render_prompt
-from shodann.state import CitizenRecord, clearance_name, read_clearance
+from shodann.state import DEFAULT_CLEARANCE, CitizenRecord, clearance_name, read_clearance
 from shodann.validator import SPECS, STANDARD, for_clearance
 from shodann.velocity import CodeMetrics, calculate_velocity
 
@@ -37,7 +38,10 @@ def rendered_for(level: int, spec=None) -> str:
             lines_added=40,
             lines_removed=3,
             spec=spec,
-            coverage_instrumented=False,
+            # Nothing measured: the band tests are about format rules, and a
+            # default `AnalysisReports()` now states that honestly instead of
+            # printing a row of zeros.
+            reports=AnalysisReports(),
         )
     )
 
@@ -67,6 +71,11 @@ def test_the_prompt_states_the_opportunity_cap_the_validator_enforces(level: int
 def test_every_mode_agrees_with_its_own_spec(mode: str) -> None:
     """Not just the clearance bands - the edge-case handlers too."""
     spec = SPECS[mode]
+    if not spec.headings:
+        # reduced_allocation has no sections and never reaches a model: it is
+        # SHODANN's own text, emitted when synthesis did not happen at all.
+        # There is no prompt for the prompt and the spec to agree about.
+        pytest.skip(f"{mode} is not synthesised")
     rendered = rendered_for(2, spec)
 
     mark = "\U0001f50d" if spec.headings[-1] == "Observations" else "\U0001f527"
@@ -163,12 +172,28 @@ def test_out_of_range_bands_saturate(tmp_path) -> None:
     assert read_clearance("negative", tmp_path) == 1
 
 
-def test_the_shipped_register_parses_and_starts_everyone_at_red() -> None:
-    """Landmine 8: no example existed anywhere, though MVP needs one."""
+def test_the_shipped_register_parses_and_holds_real_bands() -> None:
+    """Landmine 8: no example existed anywhere, though MVP needs one.
+
+    This used to assert every entry read `2`, as a way of saying "everyone
+    starts at RED". That is a claim about the *default*, and pinning it to the
+    shipped file made the file unable to hold a promotion - which is the one
+    thing a register is for. The default is asserted directly below, where it
+    lives.
+    """
     shipped = Path(__file__).parent.parent / ".shodann" / "clearances.json"
     table = json.loads(shipped.read_text(encoding="utf-8"))
     assert table, "an empty register teaches nothing about the shape"
-    assert all(int(level) == 2 for level in table.values()), "everyone starts at RED"
+    for citizen, level in table.items():
+        assert isinstance(citizen, str) and citizen
+        assert isinstance(level, str), "quoted, as shodann-core.yml's flat map has it"
+        assert 1 <= int(level) <= 6, f"{citizen} sits outside the ladder"
+
+
+def test_a_citizen_absent_from_the_register_starts_at_red() -> None:
+    """What "everyone starts at RED" actually means, pinned where it is decided."""
+    assert DEFAULT_CLEARANCE == 2
+    assert clearance_name(DEFAULT_CLEARANCE) == "RED"
 
 
 # --- the disclosure waits for ORANGE --------------------------------------

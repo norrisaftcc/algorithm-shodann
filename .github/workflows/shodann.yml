@@ -98,6 +98,32 @@ jobs:
         run: |
           pip install --quiet -e . 2>/dev/null             || pip install --quiet -r requirements.txt 2>/dev/null             || echo "Nothing to install; analysing as-is."
 
+      - name: Discard any report the citizen shipped us
+        # A report file is a tool's output, never a repository's content, and
+        # the difference was worth real money. `ruff.json` is safe because `>`
+        # truncates before ruff writes - but the coverage step ends in
+        # `test -f coverage.json || echo '{}'`, a guard for the case where
+        # pytest-cov wrote nothing. Commit a `coverage.json` claiming 97% and
+        # then break your own test collection: pytest-cov writes nothing, the
+        # guard finds the committed file and leaves it alone, and it rides the
+        # artifact into the 2.0-weighted term. Reproduced end to end before
+        # this step was written.
+        #
+        # Same class as --isolated and --cov=src: nothing feeding the score may
+        # be chosen by the citizen being scored. Deleting first is the whole
+        # fix, and it is its own step so no future edit to the tool
+        # invocations can quietly drop it.
+        #
+        # -rf, not -f. `rm -f` exits 1 on a *directory*, and a citizen can
+        # commit one at any of these paths by putting a file inside it. The
+        # step runs under `bash -e`, so that failure takes the analysis job
+        # down, no artifact is uploaded, and the review degrades to no
+        # readings at all - which is the same suppression by a quieter route:
+        # a citizen whose coverage is falling would rather it not be measured.
+        # Verified both directions before changing the flag. Caught in review
+        # by Copilot on #60.
+        run: rm -rf coverage.json ruff.json tests.xml
+
       - name: Style and complexity
         # Findings exit non-zero. Findings are the point.
         #
@@ -145,9 +171,17 @@ jobs:
         #
         # Falls back to `.` only where no src/ exists, so a flat-layout
         # submission is still measured rather than silently scoring zero.
+        #
+        # --junitxml is the only machine-readable record pytest keeps of what
+        # passed and what did not. Without it the tally goes to a discarded
+        # stdout and `|| true` swallows even the binary red/green signal, so
+        # every review was composed against "0 passed, 0 failed" - and a
+        # citizen with a fully red suite was told nothing had failed. It is
+        # core pytest, so it adds no tool and needs no freeze pin.
         run: |
           if [ -d src ]; then COV=src; else COV=.; fi
-          pytest "--cov=$COV" --cov-report=json:coverage.json -q || true
+          pytest "--cov=$COV" --cov-report=json:coverage.json \
+                 --junitxml=tests.xml -q || true
           test -f coverage.json || echo '{}' > coverage.json
 
       - name: Hand the readings over
@@ -157,6 +191,7 @@ jobs:
           path: |
             coverage.json
             ruff.json
+            tests.xml
           retention-days: 7
 
   review:

@@ -40,11 +40,13 @@ from .state import (
     save_citizen_history,
 )
 from .validator import (
+    BLOCKING,
     SPECS,
     ResponseSpec,
     blocks_posting,
     for_clearance,
     format_retry_instruction,
+    unwrap_fenced_response,
     validate,
 )
 from .velocity import CodeMetrics, VelocityResult, calculate_velocity
@@ -146,6 +148,12 @@ def collect_metrics(
         functions=functions,
         docstrings=docstrings,
         lint_issues=reports.lint_issues or 0,
+        # Declared since the port and never once assigned, so every ledger ever
+        # written recorded `syntax_errors: 0` for a repository nothing had
+        # checked. Same `or 0` as the two fields above, and tolerable for the
+        # same reason: no score term reads it, and the prompt takes its
+        # syntax figure from `reports`, where absent is still absent.
+        syntax_errors=reports.syntax_errors or 0,
     )
 
 
@@ -227,6 +235,32 @@ def _coverage_reading(reports: AnalysisReports, record: CitizenRecord, first: bo
     return f"{current} Unchanged from {previous}%."
 
 
+def _test_reading(reports: AnalysisReports) -> str:
+    """One sentence of outcomes, or none at all.
+
+    The degraded comment is the review most citizens actually receive, and it
+    is billed as instrument readings. A tally is now an instrument reading, so
+    leaving it out would put this section a measurement behind the prompt -
+    and two sections of one comment disagreeing about what ran is the exact
+    defect `EARLY_RUNS.md` 9 records.
+
+    Silent when unmeasured, rather than saying so. Coverage earns its "not
+    measured this cycle" sentence because a citizen chases the number and will
+    wonder where it went; nobody is chasing a tally, and spending words to
+    announce the absence of something never promised is the mode padding
+    itself. No claim is still the point - the citizen is told nothing rather
+    than told a zero.
+    """
+    if not reports.tests_instrumented:
+        return ""
+    if reports.tests_failed:
+        return (
+            f"Tests: {reports.tests_passed} passed, {reports.tests_failed} "
+            "in a pre-success state - each one is a specific, findable next step."
+        )
+    return f"Tests: {reports.tests_passed} passed, none in a pre-success state."
+
+
 def reduced_allocation_comment(
     facts: dict,
     result: VelocityResult,
@@ -234,84 +268,85 @@ def reduced_allocation_comment(
     reason: str,
     reports: AnalysisReports | None = None,
 ) -> str:
-    """The review a citizen gets when nothing interpreted their readings.
+    """The readings, and almost nothing else.
 
     PRD section 8 commits to graceful degradation: a student always receives
     *some* feedback. This is that floor, and it is a *visibly different*
     review rather than a quieter one wearing a footnote.
 
-    The readings here are as trustworthy as any other review's - they come
-    from tools, which cannot invent. What is missing is interpretation, and
-    the mode says so where a citizen will read it. If the lesson is "say when
-    you don't know", the saying has to be as visible as the knowing.
-    """
-    # Citizen Zero, on a first submission: "it says it compares to my last
-    # one, except this is called Submission 1, so I don't think there was a
-    # last submission to compare to." There was not - and saying otherwise
-    # taught a beginner to distrust the only sentence explaining the number.
-    first = result.is_first_submission or record.pr_count <= 1
-    if first:
-        scale_note = (
-            "Velocity is a rate of change, not a grade. This is your first "
-            "submission, so there is nothing to compare against yet - this number "
-            "is the baseline your next one moves from."
-        )
-    else:
-        scale_note = (
-            "Velocity is a rate of change, not a grade - it compares this "
-            "submission to your last one, so a high number means you moved, not "
-            "that you have arrived."
-        )
+    **Short on purpose, and much shorter than it was.** This used to run four
+    headed sections and ~235 words to say "no model answered, here are the
+    numbers" - long enough to read as a review, which is the one thing it is
+    not. Its own length was the lie: a citizen skimming it could not tell it
+    apart from a review that had been thought about. Length is how a reader
+    judges effort, so a mode that spent 235 words announcing that no effort was
+    made was arguing with itself.
 
-    coverage = _coverage_reading(reports or AnalysisReports(), record, first)
-    celebrations = "\n".join(f"- {line}" for line in result.celebrations[:3])
-    # Citizen Zero, reading this cold: "a review that leaves you with nothing
-    # to do has failed." An empty section is not neutral - it is a dead end.
-    opportunities = "\n".join(f"- {line}" for line in result.opportunities) or (
-        "- Nothing in these readings raised one. If you want a next step anyway: "
-        "run your tests locally before your next push, so you see a failure "
-        "before The Algorithm does."
+    Two things survive the cut, and both were paid for:
+
+    * **The disclaimer**, compressed to one clause. Without it the status reads
+      as a verdict on the submission rather than on the Algorithm.
+    * **One next step.** Citizen Zero, reading the old comment cold: "a review
+      that leaves you with nothing to do has failed." An empty ending is not
+      neutral, it is a dead end - and that is truer, not less true, in a
+      comment this short.
+
+    Gone: the velocity score, the rate-of-change explanation, and the
+    celebration list. A number nobody interpreted invites interpretation, and
+    the explanation existed only to defuse the number. Celebrations are the
+    part that most needs a reader; `calculate_velocity` writes them from
+    deltas alone, and three cheerful bullets under a banner saying nothing was
+    analysed is the tonal mismatch this mode exists to avoid.
+    """
+    reports = reports or AnalysisReports()
+    first = result.is_first_submission or record.pr_count <= 1
+    lines = [
+        line
+        for line in (_coverage_reading(reports, record, first), _test_reading(reports))
+        if line
+    ]
+    # The score stays, in four words instead of thirty. Citizen Zero read a
+    # bare velocity number as a grade, and the old comment spent a 30-word
+    # paragraph explaining that it is a rate. The explanation was right and
+    # the length was the mode's whole problem, so the protection is kept and
+    # the paragraph is not.
+    facts_line = (
+        f"Submission {record.pr_count} - {result.iterations} commit(s), "
+        f"{facts['files_changed']} file(s). Velocity {result.score} (a rate, not a grade)."
     )
+    readings_block = "\n\n".join([facts_line, *lines])
+
+    # The tally gets first refusal. `calculate_velocity` never sees a pass/fail
+    # count, so once the tallies were wired this line printed "Nothing in these
+    # readings raised one" directly beneath a line reporting eleven tests in a
+    # pre-success state - two parts of one comment disagreeing about the same
+    # submission, which is `EARLY_RUNS.md` 9 exactly. Caught by rendering it
+    # and reading it, as that entry was.
+    if reports.tests_failed:
+        next_step = (
+            "**Next:** take the first test in a pre-success state and make it pass. "
+            "One is a smaller job than eleven."
+        )
+    elif result.opportunities:
+        next_step = f"**Next:** {result.opportunities[0]}"
+    else:
+        next_step = (
+            "**Next:** run your tests locally before your next push, so you see a "
+            "pre-success state before The Algorithm does."
+        )
 
     return f"""## \U0001f916 SHODANN Analysis Complete
 
 **Citizen**: @{facts["citizen"]} | \
 **Clearance**: {clearance_name(record.clearance_level)} | \
-**Status**: REDUCED ALLOCATION
+**Status**: MINIMAL RESPONSE
 
----
+Readings only, not interpreted ({reason}) - the Algorithm is running lean, \
+which is a fact about the Algorithm and not about your work.
 
-### ⚡ Resource Advisory
+{readings_block}
 
-The Algorithm reviewed this submission using minimal resources. You are welcome.
-
-**This status describes the Algorithm's allocation, not your work.** Nothing
-below is a mark against your submission - the Algorithm is the one running lean.
-
-Synthesis was unavailable this cycle ({reason}), so what follows is instrument
-readings only - measured, not interpreted. The numbers are sound. The judgement
-is yours. Please verify anything that matters.
-
-### \U0001f4ca Instrument Readings
-
-Submission {record.pr_count}. {result.iterations} commit(s), \
-{facts["files_changed"]} file(s) touched. Velocity score: {result.score}.
-
-{coverage}
-
-{scale_note}
-
-### ✅ Algorithm-Approved Patterns
-
-{celebrations}
-
-### \U0001f4c8 Growth Opportunities
-
-{opportunities}
-
----
-
-*The Algorithm sees your growth. The Algorithm is operating within budget.*
+{next_step}
 """
 
 
@@ -331,37 +366,25 @@ def _safe_citizen(event_path: str) -> str:
 def emergency_comment(citizen: str) -> str:
     """What a citizen gets when the review itself could not be assembled.
 
-    No metrics, because whatever produced them is what failed. It still wears
-    the REDUCED ALLOCATION status, because that mode means exactly this: the
+    No metrics, because whatever produced them is what failed. It wears the
+    same MINIMAL RESPONSE status, because that mode means exactly this: the
     readings are absent and the Algorithm is saying so rather than going
     quiet. Silence is the one response a citizen cannot interpret.
+
+    Shortened alongside the mode it shares a status with, and for a sharper
+    version of the same reason. This ran four headed sections to report that
+    *nothing had been read at all* - the further a comment is from having
+    anything to say, the less it may spend saying it.
     """
     return f"""## \U0001f916 SHODANN Analysis Complete
 
-**Citizen**: @{citizen} | **Clearance**: PENDING | **Status**: REDUCED ALLOCATION
+**Citizen**: @{citizen} | **Clearance**: PENDING | **Status**: MINIMAL RESPONSE
 
----
+An internal fault stopped the analysis before it read anything, so there are \
+no readings this cycle. Nothing here reflects on your work, because nothing \
+here saw your work. The fault is logged for the instructor.
 
-### ⚡ Resource Advisory
-
-The Algorithm reviewed this submission using minimal resources. Extremely
-minimal. None, in fact - an internal fault prevented analysis entirely, and
-the Algorithm has elected to tell you so rather than leave you refreshing.
-
-Your submission is unaffected. Nothing here reflects on your work, because
-nothing here read your work. The fault is logged for the instructor.
-
-### \U0001f4ca Instrument Readings
-
-Unavailable this cycle.
-
-### \U0001f4c8 Growth Opportunities
-
-- Carry on. The Algorithm will resume observation once repaired.
-
----
-
-*The Algorithm sees your growth. The Algorithm is, briefly, not seeing anything.*
+**Next:** carry on. The Algorithm will resume observation once repaired.
 """
 
 
@@ -394,16 +417,93 @@ def _synthesise(
     if client is not None:
         transport["client"] = client
 
-    response = generate(prompt, config, **transport)
+    response = unwrap_fenced_response(generate(prompt, config, **transport))
     findings = _inspect(response, prompt, spec)
     if not blocks_posting(findings):
         return response
 
     retry = f"{prompt}\n\n{format_retry_instruction(findings)}"
-    second = generate(retry, config, **transport)
-    if blocks_posting(_inspect(second, prompt, spec)):
+    second = unwrap_fenced_response(generate(retry, config, **transport))
+    final = _inspect(second, prompt, spec)
+    if blocks_posting(final):
+        _log_violations(findings, final)
         raise _ContractViolation("response violated the output contract twice")
     return second
+
+
+def _log_violations(first: list, second: list) -> None:
+    """Say which rules were broken, on the one path that used to say nothing.
+
+    `_synthesise` computed these findings twice, spent them on the retry
+    instruction, and dropped both sets. So the first time a real model
+    answered - PR #60, `claude-haiku-4-5` - the degraded comment said
+    "response violated the output contract twice" and the run held no record
+    of *which* contract, which is the one fact needed to do anything about it.
+
+    Codes, plus the evidence of the few codes whose evidence this program
+    wrote itself. `Violation.message` and `.evidence` generally quote the
+    model's output, which is written from a citizen-authored PR title, so the
+    rule that keeps `main` from echoing the body applies to them for the same
+    reason - see `_SPEC_DERIVED` for the exception and why it is safe.
+    """
+    for label, findings in (("attempt 1", first), ("attempt 2", second)):
+        blocking = [finding for finding in findings if finding.severity == BLOCKING]
+        detail = sorted(
+            {
+                f"{finding.code} ({finding.evidence})"
+                if finding.code in _SPEC_DERIVED and finding.evidence
+                else finding.code
+                for finding in blocking
+            }
+        )
+        sys.stderr.write(f"SHODANN {label} blocked by: {', '.join(detail) or 'nothing'}\n")
+
+
+_SPEC_DERIVED = frozenset({"missing_section"})
+"""Codes whose `evidence` came from the spec, not from the response.
+
+`_check_headings` builds a `missing_section`'s evidence by subtracting the
+headings it *found* from the headings the `ResponseSpec` *requires*, so what
+survives is a list of this program's own constants - the names it never saw.
+It cannot carry model output, and it is the one detail worth having: the first
+live diagnosis read `missing_section` twice and could not say which section,
+which is half a finding.
+
+Nothing else belongs here without the same argument made explicitly.
+`section_order` looks similar and is not: its message reports the order it
+*found*, which is the model's.
+"""
+
+
+def _announce_degradation(reason: str | None) -> None:
+    """A warning annotation, and the job stays green.
+
+    Takes the falsy case rather than making the caller branch on it. `review`
+    tripped our own `C901` at 11 branches when this was an `if` at the call
+    site - the first time the complexity gate wired up two commits ago has
+    fired on this project's own code, which is a better argument for the
+    metric than anything in the PRD.
+
+    Every degraded review before this one exited 0, so the workflow's
+    "Surface the fault to the maintainer" step - gated on the compose step's
+    outcome - had never fired, and `EXIT_DEGRADED`'s own docstring promised a
+    red run that only a *crash* could produce. Graceful degradation and silent
+    degradation were the same code path.
+
+    Green on purpose, rather than fixed by returning `EXIT_DEGRADED`. Under
+    one-repo-per-student the check appears on the *student's* pull request,
+    and a failed model call is precisely what PRD section 8 says must not
+    reflect on their submission - a red X for our outage teaches the wrong
+    thing more effectively than the comment teaches the right one. A warning
+    is visible in the run and in the Actions tab, where the maintainer is,
+    and invisible as a verdict, where the student is.
+
+    The reason is one of this program's own strings, never the model's output
+    and never the citizen's - see `_log_violations`.
+    """
+    if not reason:
+        return
+    sys.stderr.write(f"::warning::SHODANN degraded - {reason}. A comment was still posted.\n")
 
 
 class _ContractViolation(LLMUnavailable):
@@ -529,9 +629,12 @@ def review(
             # The same spec the response will be judged against, so the
             # instructions and the checks cannot disagree.
             spec=spec,
-            # An absent reading is not a zero. Saying so is the difference
-            # between a model reporting a gap and a model celebrating one.
-            coverage_instrumented=reports.coverage_instrumented,
+            # The whole object, not the one attribute this line used to read.
+            # Every reading it carries is a fact the model is about to speak
+            # about; an absent one is not a zero, and saying so is the
+            # difference between a model reporting a gap and a model
+            # celebrating one.
+            reports=reports,
         )
         # Note the asymmetry: `root` is the citizen's repository, but the
         # prompt library is SHODANN's own and is read relative to the working
@@ -547,6 +650,8 @@ def review(
         body = reduced_allocation_comment(facts, result, record, degradation, reports)
 
     body += disclosure
+
+    _announce_degradation(degradation)
 
     if write_state:
         save_citizen_history(

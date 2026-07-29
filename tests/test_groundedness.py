@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from shodann.groundedness import BLOCKING_THRESHOLD, check_groundedness, ungrounded_tokens
+from shodann.groundedness import (
+    BLOCKING_THRESHOLD,
+    check_groundedness,
+    ungrounded_percentages,
+    ungrounded_tokens,
+)
 from shodann.validator import BLOCKING, blocks_posting, validate
 
 PROMPT = """
@@ -123,3 +128,61 @@ def test_below_the_threshold_stays_advisory(count: int) -> None:
 def test_at_the_threshold_it_blocks() -> None:
     response = " ".join(f"`novel_token_{index}`" for index in range(BLOCKING_THRESHOLD))
     assert blocks_posting(check_groundedness(response, PROMPT))
+
+
+# --- figures, not just identifiers ----------------------------------------
+
+
+PROMPT_WITH_READINGS = """
+| **Coverage** | 97.9% | 97.5% | -0.4% |
+**Style Issues**: 20 alignment opportunities
+"""
+
+
+def test_a_predicted_percentage_is_caught() -> None:
+    """The live sentence, in the section a citizen is most likely to act on.
+
+    "gets you back to 98%+ coverage territory" - said of a *style* cleanup, to
+    a citizen at 97.5% who had never been above 97.9%. Style diagnostics and
+    coverage are unrelated instruments, so it invented a figure and a
+    mechanism, and the identifier probe saw nothing because nothing was quoted.
+    """
+    response = (
+        "Run your linter on one rule and commit the cleanup. This gets you "
+        "back to 98%+ coverage territory."
+    )
+    assert ungrounded_percentages(response, PROMPT_WITH_READINGS) == ["98%"]
+
+    findings = check_groundedness(response, PROMPT_WITH_READINGS)
+    assert [v.code for v in findings] == ["ungrounded_figure"]
+    assert blocks_posting(findings), "a measurement nobody took is not a suggestion"
+
+
+def test_the_measured_figures_pass_untouched() -> None:
+    response = "Coverage moved 97.9% to 97.5%, a delta of -0.4%. The Algorithm has observed."
+    assert ungrounded_percentages(response, PROMPT_WITH_READINGS) == []
+    assert not check_groundedness(response, PROMPT_WITH_READINGS)
+
+
+def test_rounding_is_reading_not_inventing() -> None:
+    """A model writing 97% for a measured 97.5% is being readable.
+
+    Blocking that would punish good prose, and the case that mattered - 98
+    against 97.5 - is still caught, because it crosses the integer.
+    """
+    assert ungrounded_percentages("Coverage sits near 97%.", PROMPT_WITH_READINGS) == []
+    assert ungrounded_percentages("Coverage sits near 98%.", PROMPT_WITH_READINGS) == ["98%"]
+
+
+def test_a_figure_inside_a_code_fence_is_an_example_not_a_claim() -> None:
+    fenced = "See:\n\n```\ncoverage: 100%\n```\n"
+    assert ungrounded_percentages(fenced, PROMPT_WITH_READINGS) == []
+
+
+def test_the_identifier_probe_still_reports_alongside_the_figure_probe() -> None:
+    response = (
+        "This gets you to 88% once `alpha_helper`, `beta_helper` and "
+        "`gamma_helper` are aligned."
+    )
+    codes = [v.code for v in check_groundedness(response, PROMPT_WITH_READINGS)]
+    assert codes == ["ungrounded_figure", "ungrounded_reference"], "both, and figures first"

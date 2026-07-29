@@ -34,6 +34,7 @@ __all__ = [
     "blocks_posting",
     "for_clearance",
     "format_retry_instruction",
+    "unwrap_fenced_response",
     "validate",
 ]
 
@@ -208,33 +209,32 @@ CONFIG_ONLY = ResponseSpec(
 
 REDUCED_ALLOCATION = ResponseSpec(
     name="reduced_allocation",
-    # 250 of review plus the clearance disclosure's reserved 30. Unlike every
-    # other spec, this text is SHODANN's own and a fixed length - it sits at
-    # ~235 words, so reserving the footer out of 250 would put the comment
-    # over its own cap the moment a citizen reaches ORANGE. The budget for the
-    # review itself is unchanged; this states the addition rather than hiding
-    # it by appending after the check.
-    max_words=280,
-    headings=(
-        "Resource Advisory",
-        "Instrument Readings",
-        "Algorithm-Approved Patterns",
-        "Growth Opportunities",
-    ),
-    max_opportunities=2,
+    # Measured, not guessed: the longest real comment this mode produces is
+    # 127 words - a failing suite at ORANGE, where the coverage sentence, the
+    # tally sentence and the next step are all in their longest form and the
+    # disclosure footer adds 30. 145 leaves that a little room and nothing
+    # like enough to grow a paragraph in. It was 280 across four headed
+    # sections; the cut is the point, so the cap is what stops it coming back.
+    max_words=145,
+    # No sections at all. Four headings made a comment that says "nothing
+    # interpreted this" wear the shape of a review that did.
+    headings=(),
+    max_opportunities=1,
     header_field="Status",
 )
-"""The Algorithm reviewed you cheaply and would like credit for it.
+"""The readings, and almost nothing else.
 
 Entered when synthesis is unavailable, when the configured model does not
 serve this citizen's band, or when a response failed the contract twice. The
 readings in it are as good as any other review's - they come from tools - but
-nothing has interpreted them, and the mode says so out loud rather than
-burying it in a footnote.
+nothing has interpreted them, and the mode says so in its status line rather
+than burying it in a footnote.
 
-A system that knows its own limits announces them. That is the lesson the mode
-exists to teach, and it only teaches it if the announcement is as visible as
-the findings.
+**Its brevity is the honesty.** This ran ~235 words under four headings, which
+is long enough to read as a considered review - and length is how a reader
+judges effort, so the mode spent 235 words arguing against its own banner. A
+system that knows its own limits announces them; announcing them at the length
+of a real review is not announcing them.
 """
 
 SPECS = {
@@ -294,6 +294,54 @@ def _prose(text: str) -> str:
     """
     stripped = _INLINE_CODE.sub(" ", _FENCED.sub(" ", text))
     return stripped.translate(_SMART_QUOTES)
+
+
+def unwrap_fenced_response(text: str) -> str:
+    """Undo a model that wrapped its whole answer in one code fence.
+
+    LAYER 4 says "Generate your response using EXACTLY this structure" and then
+    shows the structure inside a ```markdown fence, because that is how you
+    make an example legible. A model that complies with the *illustration*
+    returns its review inside a fence too - and `_headings` strips fenced
+    blocks before looking for headings, so the entire review disappears and
+    every required section is reported missing.
+
+    That is not a hypothesis. PR #60, `claude-haiku-4-5`, twice, including on a
+    retry that named the violation:
+
+        missing_section (Shipping Velocity Report, Algorithm-Approved
+        Patterns, Growth Opportunities, Recommended Iteration)
+
+    All four, which is the signature of a response the checker cannot see at
+    all rather than one with a section missing. **SHODANN could not synthesise
+    a review at all while this held**, with any model, for any citizen - it
+    degraded to REDUCED ALLOCATION every time and the fallback made that look
+    like a model problem.
+
+    Unwrapping rather than loosening `_headings`. The fence-stripping is
+    correct and was itself paid for: a model once illustrated a fix with
+    `# Before` / `# After` inside a fenced example and the validator invented
+    two phantom sections out of the student's own code. Both behaviours are
+    wanted, and they only conflict when the fence *is* the whole response.
+
+    So the rule is exactly that: one fence, opening the first line and closing
+    the last, with nothing outside it. A review that merely contains a code
+    example is untouched.
+    """
+    lines = text.strip().splitlines()
+    if len(lines) < 2:
+        return text
+
+    fences = [index for index, line in enumerate(lines) if line.strip().startswith("```")]
+    if fences != [0, len(lines) - 1]:
+        return text
+    if not _FENCE_OPEN.fullmatch(lines[0].strip()) or lines[-1].strip() != "```":
+        return text
+    return "\n".join(lines[1:-1]).strip()
+
+
+_FENCE_OPEN = re.compile(r"```[A-Za-z0-9_+-]*")
+"""An opening fence with an optional language tag: ``` or ```markdown."""
 
 
 def _headings(text: str) -> list[str]:

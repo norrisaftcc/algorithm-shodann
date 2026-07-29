@@ -18,6 +18,7 @@ from shodann.validator import (
     blocks_posting,
     for_clearance,
     format_retry_instruction,
+    unwrap_fenced_response,
     validate,
 )
 
@@ -372,3 +373,62 @@ def test_blocking_violations_sort_first() -> None:
                 "This is wrong \U0001f389 and needs work.")
     violations = validate(text)
     assert violations[0].severity == BLOCKING
+
+
+# --- the fence that made synthesis impossible ------------------------------
+
+
+def test_a_wholly_fenced_response_is_unwrapped() -> None:
+    """LAYER 4 shows the required structure inside a ```markdown fence.
+
+    A model that complies with the illustration returns its review inside a
+    fence too. `_headings` strips fenced blocks before looking for headings -
+    for good reason, see the phantom-section case below - so the whole review
+    vanished and every required section came back missing.
+    """
+    body = "## Title\n\n### One\n\ntext\n"
+    assert unwrap_fenced_response(f"```markdown\n{body}```") == body.strip()
+    assert unwrap_fenced_response(f"```\n{body}```") == body.strip()
+
+
+def test_the_live_failure_reproduces_and_then_does_not() -> None:
+    """PR #60, claude-haiku-4-5, twice. The signature is *all four* sections.
+
+    A model omitting a section it has nothing to say in would drop one. Losing
+    the entire heading list means the checker could not see the response at
+    all - and SHODANN could not synthesise a review for any citizen with any
+    model while this held, degrading to REDUCED ALLOCATION every time.
+    """
+    spec = for_clearance(STANDARD, 3)
+    fenced = f"```markdown\n{GOOD_STANDARD}\n```"
+
+    missing = [v for v in validate(fenced, spec) if v.code == "missing_section"]
+    assert missing, "the defect, reproduced"
+    assert missing[0].evidence == (
+        "Shipping Velocity Report, Algorithm-Approved Patterns, "
+        "Growth Opportunities, Recommended Iteration"
+    ), "byte-identical to what the live run logged"
+
+    assert not blocks_posting(validate(unwrap_fenced_response(fenced), spec))
+
+
+def test_a_review_containing_a_code_example_is_left_alone() -> None:
+    """The fence-stripping is correct and was paid for.
+
+    A model once illustrated a fix with `# Before` / `# After` inside a fenced
+    example and the validator invented two phantom sections out of the
+    student's own code. Only a fence that *is* the whole response is unwrapped.
+    """
+    review = "### Growth Opportunities\n\n```python\n# Before\nx = 1\n```\n\nmore text"
+    assert unwrap_fenced_response(review) == review
+
+
+def test_a_response_with_prose_outside_the_fence_is_left_alone() -> None:
+    wrapped = "Here you go:\n\n```markdown\n### One\n```"
+    assert unwrap_fenced_response(wrapped) == wrapped
+
+
+def test_unwrapping_is_idempotent_and_safe_on_junk() -> None:
+    assert unwrap_fenced_response("") == ""
+    assert unwrap_fenced_response("```") == "```"
+    assert unwrap_fenced_response("plain text") == "plain text"

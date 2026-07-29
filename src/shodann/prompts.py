@@ -34,6 +34,7 @@ from pathlib import Path
 
 from jinja2 import Environment, StrictUndefined
 
+from .analysis import AnalysisReports
 from .clearance import clearance_instructions, iteration_guidance
 from .state import CitizenRecord, clearance_name
 from .validator import STANDARD, ResponseSpec, for_clearance
@@ -202,17 +203,11 @@ def build_context(
     lines_added: int,
     lines_removed: int,
     current_week: str = "",
-    syntax_report: str = "No syntax analysis performed.",
-    style_report: str = "No style analysis performed.",
-    test_report: str = "No tests executed.",
-    tests_passed: int = 0,
-    tests_failed: int = 0,
-    style_issue_count: int = 0,
+    reports: AnalysisReports | None = None,
     spec: ResponseSpec | None = None,
     security_section: str = "",
     rage_section: str = "",
     mode_statement: str = "NORMAL (Growth Celebration)",
-    coverage_instrumented: bool = True,
 ) -> dict:
     """Map domain objects onto the template's variables.
 
@@ -220,13 +215,27 @@ def build_context(
     would raise at render time, which is the point, but it should never get
     that far in production.
 
-    ``coverage_instrumented=False`` sends the literal words ``not
-    instrumented`` in place of every coverage figure. A zero handed to a model
-    is a measurement, and it will be read as one: both a 3B and an 8B model,
-    given `0.0` and told to celebrate deltas, congratulated a citizen on "a
-    coverage delta of 0.0% to 0.0%". That is the prompt's defect, not the
-    model's, and no larger model fixes it.
+    An absent reading sends the literal words ``not instrumented`` in place of
+    every figure it would have produced. A zero handed to a model is a
+    measurement, and it will be read as one: both a 3B and an 8B model, given
+    `0.0` and told to celebrate deltas, congratulated a citizen on "a coverage
+    delta of 0.0% to 0.0%". That is the prompt's defect, not the model's, and
+    no larger model fixes it.
+
+    **One `reports` object, not six numbers.** This function used to take
+    `tests_passed`, `tests_failed`, `style_issue_count` and three report
+    strings as separate parameters, each defaulting to a zero or to "No tests
+    executed." `review()` passed none of them, so every review ever composed
+    told the model that zero tests passed, zero failed and nothing was checked
+    for syntax - while the velocity score beside it read the real coverage and
+    the real lint count off an object already in scope at the call site.
+
+    The parameters are gone rather than filled in. Six arguments a caller must
+    remember is a defect waiting to recur; one object cannot be half-passed.
+    And the default is now *honest*: no reports means nothing was measured,
+    which is what the template will say, instead of a confident row of zeros.
     """
+    reports = reports or AnalysisReports()
     previous = record.last_metrics or CodeMetrics.baseline()
     current = result.deltas
 
@@ -260,7 +269,7 @@ def build_context(
         "CLEARANCE_NUMBER": record.clearance_level,
         "CURRENT_WEEK": current_week,
         "PR_COUNT": record.pr_count,
-        "COVERAGE_INSTRUMENTED": coverage_instrumented,
+        "COVERAGE_INSTRUMENTED": reports.coverage_instrumented,
         "PREV_COVERAGE": previous_coverage,
         "PREV_STREAK": record.iteration_streak,
         "PR_TITLE": pr_title,
@@ -269,13 +278,16 @@ def build_context(
         "LINES_REMOVED": lines_removed,
         "ITERATION_COUNT": result.iterations,
         "HISTORY_NARRATIVE": describe_history(record, result),
-        "SYNTAX_REPORT": syntax_report,
-        "SYNTAX_ERRORS": 0,
-        "STYLE_REPORT": style_report,
-        "STYLE_ISSUE_COUNT": style_issue_count,
-        "TEST_REPORT": test_report,
-        "TESTS_PASSED": tests_passed,
-        "TESTS_FAILED": tests_failed,
+        "SYNTAX_REPORT": _syntax_report(reports),
+        "SYNTAX_MEASURED": reports.syntax_errors is not None,
+        "SYNTAX_ERRORS": reports.syntax_errors,
+        "STYLE_REPORT": _style_report(reports),
+        "STYLE_MEASURED": reports.lint_issues is not None,
+        "STYLE_ISSUE_COUNT": reports.lint_issues,
+        "TEST_REPORT": _test_report(reports),
+        "TESTS_INSTRUMENTED": reports.tests_instrumented,
+        "TESTS_PASSED": reports.tests_passed,
+        "TESTS_FAILED": reports.tests_failed,
         "CURRENT_COVERAGE": current_coverage,
         "PREV_COMPLEXITY": previous.complexity,
         "CURRENT_COMPLEXITY": previous.complexity + current.complexity,
@@ -299,6 +311,45 @@ def build_context(
         "WORD_CAP": spec.max_words,
         "MAX_OPPORTUNITIES": spec.max_opportunities,
     }
+
+
+_NOT_MEASURED = "Not measured this cycle."
+"""What every report says when its tool did not run.
+
+One phrase for all three, because the failure it replaces was three different
+sentences - "No tests executed.", "No syntax analysis performed.", "No style
+analysis performed." - each of which reads as a *finding* about the code rather
+than a gap in the instruments. "No tests executed" describes a citizen who
+wrote none. It was printed to a model beside a table claiming a measured zero,
+on every review, for a repository with 245 passing tests.
+"""
+
+
+def _test_report(reports: AnalysisReports) -> str:
+    if not reports.tests_instrumented:
+        return _NOT_MEASURED
+    if reports.tests_failed:
+        return f"{reports.tests_passed} passed, {reports.tests_failed} in a pre-success state."
+    return f"{reports.tests_passed} passed, none in a pre-success state."
+
+
+def _style_report(reports: AnalysisReports) -> str:
+    if reports.lint_issues is None:
+        return _NOT_MEASURED
+    if reports.complexity:
+        return (
+            f"{reports.lint_issues} style diagnostics, "
+            f"{reports.complexity} of them functions above the branch threshold."
+        )
+    return f"{reports.lint_issues} style diagnostics."
+
+
+def _syntax_report(reports: AnalysisReports) -> str:
+    if reports.syntax_errors is None:
+        return _NOT_MEASURED
+    if reports.syntax_errors:
+        return f"{reports.syntax_errors} files could not be parsed."
+    return "Every file parsed."
 
 
 def describe_history(record: CitizenRecord, result: VelocityResult) -> str:

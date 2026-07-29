@@ -186,7 +186,7 @@ def test_two_bad_responses_fall_back_rather_than_posting_the_second(tmp_path) ->
     body = review(EVENT, root=tmp_path, config=CONFIG, opener=responder(bad, bad))
 
     assert "You should" not in body
-    assert "REDUCED ALLOCATION" in body
+    assert "MINIMAL RESPONSE" in body
 
 
 # --- degradation ----------------------------------------------------------
@@ -221,10 +221,9 @@ def test_the_degraded_comment_honours_its_own_contract(tmp_path) -> None:
 def test_the_advisory_makes_the_joke_and_the_caveat_the_same_sentence(tmp_path) -> None:
     body = review(EVENT, root=tmp_path, config=LLMConfig())
 
-    assert "using minimal resources. You are welcome." in body
-    assert "measured, not interpreted" in body
-    assert "verify anything that matters" in body
-    assert "operating within budget" in body
+    assert "not interpreted" in body, "the mode names its own limit"
+    assert "not about your work" in body, "and disclaims the citizen in the same breath"
+    assert "no model configured" in body, "and says which limit it hit"
 
 
 def test_the_degraded_review_never_interprets_while_claiming_not_to(tmp_path) -> None:
@@ -233,11 +232,11 @@ def test_the_degraded_review_never_interprets_while_claiming_not_to(tmp_path) ->
     interpretation?" It was. The readings section states counts only now.
     """
     body = review(EVENT, root=tmp_path, config=LLMConfig())
-    readings = body.split("Instrument Readings")[1].split("###")[0]
+    readings = readings_of(body)
 
     for interpretation in ("EXCEPTIONAL", "deeply pleased", "Refactoring phase", "OPTIMAL"):
         assert interpretation not in readings, f"{interpretation!r} is a judgement, not a reading"
-    assert "rate of change, not a grade" in body, "the number needs a scale to mean anything"
+    assert "a rate, not a grade" in body, "the number still needs a scale to mean anything"
 
 
 def test_a_first_submission_is_not_told_to_compare_with_its_predecessor(tmp_path) -> None:
@@ -248,9 +247,8 @@ def test_a_first_submission_is_not_told_to_compare_with_its_predecessor(tmp_path
     """
     body = review(EVENT, root=tmp_path, config=LLMConfig())
 
-    assert "this is your first submission" in body.lower()
     assert "compares this submission to your last one" not in body
-    assert "baseline your next one moves from" in body
+    assert "your last" not in body, "no comparison is offered at all now, so none can be wrong"
 
 
 def test_the_status_says_it_is_not_about_the_citizen(tmp_path) -> None:
@@ -259,7 +257,10 @@ def test_the_status_says_it_is_not_about_the_citizen(tmp_path) -> None:
     the header first.
     """
     body = review(EVENT, root=tmp_path, config=LLMConfig())
-    assert "describes the Algorithm's allocation, not your work" in body
+    assert "not about your work" in body
+    assert body.index("not about your work") < body.index("Velocity"), (
+        "the disclaimer has to arrive before the first number a citizen could take personally"
+    )
 
 
 def test_a_degraded_review_always_leaves_something_to_do(tmp_path) -> None:
@@ -267,10 +268,10 @@ def test_a_degraded_review_always_leaves_something_to_do(tmp_path) -> None:
     failed, and no amount of correct structure changes that.
     """
     body = review(EVENT, root=tmp_path, config=LLMConfig())
-    opportunities = body.split("Growth Opportunities")[1].split("---")[0]
+    next_step = body.split("**Next:**")[1].split("---")[0].strip()
 
-    assert opportunities.strip().startswith("-")
-    assert "no growth opportunities to raise" not in opportunities, "a dead end, not a section"
+    assert next_step, "an empty ending is a dead end, and more so in a comment this short"
+    assert not next_step.startswith("nothing"), "a dead end, not a next step"
 
 
 # --- coverage in the degraded readout -------------------------------------
@@ -305,7 +306,8 @@ def ledger(tmp_path, *, coverage: float, measured: bool) -> None:
 
 
 def readings_of(body: str) -> str:
-    return body.split("Instrument Readings")[1].split("###")[0]
+    """The instrument lines, between the disclaimer and the one next step."""
+    return body.split("not about your work.")[1].split("**Next:**")[0]
 
 
 def test_a_measured_coverage_figure_reaches_the_citizen(tmp_path) -> None:
@@ -436,11 +438,12 @@ def test_the_instrument_arriving_is_not_celebrated_as_the_citizen_improving(
         EVENT, root=tmp_path, config=LLMConfig(),
         reports_dir=instrumented(tmp_path, 98.6), write_state=False,
     )
-    patterns = body.split("Approved Patterns")[1].split("###")[0]
-
     assert "previous submission was not measured" in readings_of(body)
-    assert "jumped" not in patterns, "the readings deny the gain the celebration claims"
-    assert "First tests are hardest tests" not in patterns, (
+    # The celebration list is gone from this mode, so the contradiction it
+    # used to create cannot recur here. What must still hold is that no gain
+    # is claimed anywhere in the comment when only the instrument is new.
+    assert "jumped" not in body, "the readings deny the gain a celebration would claim"
+    assert "First tests are hardest tests" not in body, (
         "they may have had 98.6% all along; only the instrument is new"
     )
 
@@ -453,7 +456,12 @@ def test_a_measured_zero_to_thirty_still_scores_as_the_gain_it_is(tmp_path) -> N
         reports_dir=instrumented(tmp_path, 30.0), write_state=False,
     )
     assert "Up 30.0 from 0.0%" in readings_of(body)
-    assert "Coverage" in body.split("Approved Patterns")[1].split("###")[0]
+    # The celebration section this used to check is gone from the degraded
+    # mode. The gain still has to survive into the score, which is what
+    # US-1.3 is actually about - a first test must outweigh a later equal one.
+    assert float(body.split("Velocity ")[1].split(" ")[0]) > 0, (
+        "a measured 0 to 30 is the flagship gain and must not reconcile to nothing"
+    )
 
 
 def test_an_unmeasured_cycle_carries_the_last_real_figure_forward(tmp_path) -> None:
@@ -486,7 +494,7 @@ def test_a_band_outside_the_allocation_is_refused_not_attempted(tmp_path) -> Non
         opener=must_not_be_called, write_state=False,
     )
 
-    assert "REDUCED ALLOCATION" in body
+    assert "MINIMAL RESPONSE" in body
     assert "clearance 3 and below" in body
 
 
@@ -575,8 +583,8 @@ def test_a_broken_review_still_speaks(tmp_path, capsys) -> None:
     body = out.read_text(encoding="utf-8")
 
     assert code == EXIT_DEGRADED, "a citizen is served, and CI still turns red"
-    assert "REDUCED ALLOCATION" in body
-    assert "nothing here read your work" in body
+    assert "MINIMAL RESPONSE" in body
+    assert "nothing here saw your work" in body
     assert "Traceback" in capsys.readouterr().err, "the maintainer gets the cause"
 
 
@@ -663,7 +671,7 @@ def test_the_disclosure_rides_the_finished_comment(tmp_path) -> None:
     body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
 
     assert ".shodann/clearances.json" in body
-    assert body.index(".shodann/clearances.json") > body.index("Instrument Readings")
+    assert body.index(".shodann/clearances.json") > body.index("**Next:**")
 
 
 def test_a_red_citizen_is_not_handed_the_knob(tmp_path) -> None:
@@ -705,7 +713,7 @@ def test_an_unreachable_primary_reaches_the_fallback(tmp_path) -> None:
     )
 
     assert sdk.calls == 1, "the fallback was asked exactly once"
-    assert "REDUCED ALLOCATION" not in body, "a served review is not a degraded one"
+    assert "MINIMAL RESPONSE" not in body, "a served review is not a degraded one"
 
 
 def test_without_a_fallback_an_unreachable_primary_still_degrades(tmp_path) -> None:
@@ -713,7 +721,7 @@ def test_without_a_fallback_an_unreachable_primary_still_degrades(tmp_path) -> N
         EVENT, root=tmp_path, config=CONFIG, fallback=None,
         opener=_unreachable, write_state=False,
     )
-    assert "REDUCED ALLOCATION" in body
+    assert "MINIMAL RESPONSE" in body
 
 
 def test_a_contract_violation_does_not_spend_a_second_provider(tmp_path) -> None:
@@ -734,7 +742,7 @@ def test_a_contract_violation_does_not_spend_a_second_provider(tmp_path) -> None
     )
 
     assert sdk.calls == 0, "unreachability is the trigger, not a bad answer"
-    assert "REDUCED ALLOCATION" in body
+    assert "MINIMAL RESPONSE" in body
 
 
 def test_an_explicit_config_never_picks_up_a_key_from_the_environment(
@@ -749,7 +757,7 @@ def test_an_explicit_config_never_picks_up_a_key_from_the_environment(
 
     body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
 
-    assert "REDUCED ALLOCATION" in body, "no model configured, and none reached for"
+    assert "MINIMAL RESPONSE" in body, "no model configured, and none reached for"
 
 
 # --- the footer is inside the budget, not appended past it -----------------
@@ -760,13 +768,17 @@ def test_the_degraded_spec_leaves_room_for_the_disclosure() -> None:
 
     The degraded comment is SHODANN's own text at a fixed length, so unlike
     every other spec its budget cannot shrink to make room. Its cap must
-    therefore carry the review budget *plus* the reservation.
+    therefore carry the readings *plus* the reservation. The 115 is measured:
+    the longest real body this mode emits is a failing suite with every
+    sentence in its longest form.
     """
-    assert REDUCED_ALLOCATION.max_words >= 250 + DISCLOSURE_ALLOWANCE
+    assert REDUCED_ALLOCATION.max_words >= 115 + DISCLOSURE_ALLOWANCE
 
 
 @pytest.mark.parametrize("band", [1, 2, 3, 4, 5, 6])
-def test_the_posted_comment_respects_its_cap_at_every_band(band: int, monkeypatch) -> None:
+def test_the_posted_comment_respects_its_cap_at_every_band(
+    band: int, monkeypatch, tmp_path
+) -> None:
     """The whole comment is what the contract caps, footer included.
 
     Measured against this repository rather than an empty temporary one: the
@@ -779,9 +791,17 @@ def test_the_posted_comment_respects_its_cap_at_every_band(band: int, monkeypatc
     cap post over it, and the degraded path had no headroom at all: ~235 words
     of fixed text against a 250-word cap. Every test citizen was RED, so
     nothing saw it.
+
+    Reports are supplied for the same reason the root is real: the readout
+    grows by a sentence when a tally exists, and the failing branch is the
+    longest of them. Measuring the shortest possible comment against the cap
+    is the mistake this docstring already records once.
     """
     monkeypatch.setattr("shodann.review.read_clearance", lambda citizen, root: band)
-    body = review(EVENT, root=".", config=LLMConfig(), write_state=False)
+    reports = _reports_dir(tmp_path, _suite(tests=11, failures=11), coverage=4.0)
+    body = review(
+        EVENT, root=".", reports_dir=reports, config=LLMConfig(), write_state=False
+    )
 
     assert not blocks_posting(validate(body, REDUCED_ALLOCATION)), (
         f"band {band}: {len(body.split())} words"
@@ -801,3 +821,228 @@ def test_the_disclosure_costs_the_model_words_rather_than_the_citizen(tmp_path) 
     review(EVENT, root=tmp_path, config=CONFIG, opener=capture, write_state=False)
 
     assert "370" in seen["prompt"], "400 minus the 30 reserved for the footer"
+
+
+# --- the tallies reach the model, not just the reader ---------------------
+
+
+def _reports_dir(tmp_path, xml: str, coverage: float | None = None):
+    directory = tmp_path / "shodann-reports"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "tests.xml").write_text(xml, encoding="utf-8")
+    (directory / "ruff.json").write_text('[{"code": "E501"}]', encoding="utf-8")
+    if coverage is not None:
+        (directory / "coverage.json").write_text(
+            json.dumps({"totals": {"percent_covered": coverage}}), encoding="utf-8"
+        )
+    return directory
+
+
+def _suite(tests: int, failures: int) -> str:
+    return (
+        '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" '
+        f'errors="0" failures="{failures}" skipped="0" tests="{tests}">'
+        "</testsuite></testsuites>"
+    )
+
+
+def _capture(seen: dict):
+    def opener(request, timeout=None):
+        seen["prompt"] = json.loads(request.data)["messages"][0]["content"]
+        payload = {"choices": [{"message": {"content": GOOD_RESPONSE}}]}
+        return io.BytesIO(json.dumps(payload).encode())
+
+    return opener
+
+
+def test_the_real_tallies_reach_the_prompt_the_model_is_shown(tmp_path) -> None:
+    """S1-06, asserted at the seam it actually broke at.
+
+    Every reader below this line was correct. `AnalysisReports` declared the
+    tallies, `read_coverage` looked for them, the template had rows for them -
+    and `review()` called `build_context` without passing any of it, so the
+    defaults took over and every review ever composed said zero passed and
+    zero failed. Nothing failed at the unit level, because no unit was wrong.
+
+    So this asserts the wiring rather than the function: run the whole thing
+    and read the bytes that left for the model.
+    """
+    seen: dict = {}
+    reports = _reports_dir(tmp_path, _suite(tests=9, failures=2), coverage=61.0)
+
+    review(
+        EVENT,
+        root=tmp_path,
+        reports_dir=reports,
+        config=CONFIG,
+        opener=_capture(seen),
+        write_state=False,
+    )
+
+    assert "| **Tests Passed** | 7 |" in seen["prompt"]
+    assert "| **Tests Failed** | 2 |" in seen["prompt"]
+    assert "7 passed, 2 in a pre-success state." in seen["prompt"]
+    assert "**Style Issues**: 1 alignment opportunities" in seen["prompt"]
+    assert "**Syntax Status**: 0 compilation barriers detected" in seen["prompt"]
+
+
+def test_a_citizen_with_a_red_suite_is_never_described_as_having_none(tmp_path) -> None:
+    """The harm, stated as the thing that must not appear in the prompt."""
+    seen: dict = {}
+    reports = _reports_dir(tmp_path, _suite(tests=11, failures=11), coverage=4.0)
+
+    review(
+        EVENT,
+        root=tmp_path,
+        reports_dir=reports,
+        config=CONFIG,
+        opener=_capture(seen),
+        write_state=False,
+    )
+
+    assert "| **Tests Failed** | 11 |" in seen["prompt"]
+    assert "| **Tests Failed** | 0 |" not in seen["prompt"]
+    assert "No tests executed." not in seen["prompt"], "the phrase that stood in for a tally"
+
+
+def test_no_report_directory_says_so_instead_of_reporting_zeros(tmp_path) -> None:
+    """The default that used to be a lie."""
+    seen: dict = {}
+
+    review(EVENT, root=tmp_path, config=CONFIG, opener=_capture(seen), write_state=False)
+
+    assert "Test outcomes were not measured this cycle." in seen["prompt"]
+    assert "| **Tests Passed** |" not in seen["prompt"], "a row implies a reading"
+    assert "Nothing checked whether this code parses." in seen["prompt"]
+    assert "No style tool ran this cycle." in seen["prompt"]
+
+
+def test_the_degraded_readout_reports_the_tally_it_now_has(tmp_path) -> None:
+    """Two sections of one comment must not disagree about what ran.
+
+    The degraded comment is billed as instrument readings, and a tally became
+    an instrument reading. `EARLY_RUNS.md` 9 is a comment whose two sections
+    contradicted each other about coverage while 243 tests passed.
+    """
+    reports = _reports_dir(tmp_path, _suite(tests=11, failures=11), coverage=4.0)
+
+    body = review(
+        EVENT, root=tmp_path, reports_dir=reports, config=LLMConfig(), write_state=False
+    )
+
+    assert "11 in a pre-success state" in body
+    assert not blocks_posting(validate(body, REDUCED_ALLOCATION))
+
+
+def test_the_degraded_readout_stays_silent_rather_than_reporting_zero(tmp_path) -> None:
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert "Tests:" not in body, "no tally is not a tally of zero"
+
+
+def test_a_red_suite_is_never_told_nothing_raised_an_opportunity(tmp_path) -> None:
+    """Found by rendering the comment and reading it, not by any assertion.
+
+    `calculate_velocity` never sees a pass/fail count, so with the tallies
+    newly wired the degraded comment printed "Nothing in these readings raised
+    one" directly beneath a line reporting eleven tests in a pre-success state.
+    Both sentences were true of their own inputs and the pair was nonsense.
+    """
+    reports = _reports_dir(tmp_path, _suite(tests=11, failures=11), coverage=4.0)
+
+    body = review(
+        EVENT, root=tmp_path, reports_dir=reports, config=LLMConfig(), write_state=False
+    )
+
+    assert "11 in a pre-success state" in body
+    assert "Nothing in these readings raised one" not in body
+    assert not blocks_posting(validate(body, REDUCED_ALLOCATION))
+
+
+def test_giving_up_on_the_contract_says_which_rules_broke(tmp_path, capsys) -> None:
+    """The one path in the program that used to fail without saying anything.
+
+    PR #60 was the first time a real model answered. It failed the contract
+    twice, the citizen got REDUCED ALLOCATION, and the run recorded only
+    "response violated the output contract twice" - which names the outcome
+    and not one thing about the cause.
+    """
+    bad = GOOD_RESPONSE.replace("The Algorithm suggests naming", "You should rename")
+
+    review(EVENT, root=tmp_path, config=CONFIG, opener=responder(bad, bad), write_state=False)
+
+    logged = capsys.readouterr().err
+    assert "attempt 1 blocked by: forbidden_vocabulary" in logged
+    assert "attempt 2 blocked by: forbidden_vocabulary" in logged
+
+
+def test_the_log_names_codes_and_never_quotes_the_model(tmp_path, capsys) -> None:
+    """`main` refuses to echo the body because a PR title reaches it.
+
+    A violation's `message` and `evidence` quote the model's own output, which
+    is written from that same citizen-authored title. `code` is a slug this
+    program chose, so it is the only part safe to put in a CI log.
+    """
+    bad = GOOD_RESPONSE.replace("The Algorithm suggests naming", "You should rename")
+
+    review(EVENT, root=tmp_path, config=CONFIG, opener=responder(bad, bad), write_state=False)
+
+    logged = capsys.readouterr().err
+    assert "You should" not in logged, "the evidence quotes the model, which quotes the citizen"
+    assert "rename" not in logged
+
+
+# --- degradation is announced, and still not a verdict ---------------------
+
+
+def test_a_degraded_review_warns_rather_than_failing(tmp_path, capsys) -> None:
+    """Green on purpose, and no longer silent.
+
+    `EXIT_DEGRADED` is returned only when `main` catches an exception, so a
+    review that degrades *gracefully* exited 0 and the workflow's "Surface the
+    fault to the maintainer" step never fired once. Graceful degradation and
+    silent degradation were one code path.
+
+    Red would be the wrong fix. Under one-repo-per-student the check lands on
+    the *student's* pull request, and PRD section 8 is explicit that a failed
+    model call must not reflect on their submission.
+    """
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    warning = capsys.readouterr().err
+    assert "::warning::" in warning, "a GitHub annotation, visible where the maintainer is"
+    assert "no model configured" in warning, "and it names the reason"
+    assert "MINIMAL RESPONSE" in body, "the citizen still gets their review"
+
+
+def test_a_healthy_review_announces_nothing(tmp_path, capsys) -> None:
+    """A warning on every green run is a warning nobody reads.
+
+    Written twice. The first version read `sys.stderr.getvalue()` through a
+    `getattr(..., lambda: "")` fallback, which under pytest's capture returns
+    the empty string unconditionally - an assertion that passes whatever the
+    program does. `EARLY_RUNS.md` 13 is a page about exactly that, written the
+    same day, which is how quickly the lesson stops being applied.
+    """
+    review(EVENT, root=tmp_path, config=CONFIG, opener=responder(GOOD_RESPONSE), write_state=False)
+
+    assert "::warning::" not in capsys.readouterr().err
+
+
+def test_the_missing_section_is_named_not_just_counted(tmp_path, capsys) -> None:
+    """The live diagnosis said `missing_section` twice and stopped there.
+
+    Which section is the whole of the finding. Safe to log because
+    `_check_headings` builds that evidence by subtracting the headings it
+    found from the ones the spec requires, so what remains is this program's
+    own constants - never the model's output.
+    """
+    truncated = GOOD_RESPONSE.split("### \U0001f527 Recommended Iteration")[0]
+
+    review(
+        EVENT, root=tmp_path, config=CONFIG, opener=responder(truncated, truncated),
+        write_state=False,
+    )
+
+    logged = capsys.readouterr().err
+    assert "missing_section (Recommended Iteration)" in logged
