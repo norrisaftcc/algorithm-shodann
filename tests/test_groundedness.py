@@ -11,6 +11,7 @@ import pytest
 from shodann.groundedness import (
     BLOCKING_THRESHOLD,
     check_groundedness,
+    ungrounded_attribution,
     ungrounded_percentages,
     ungrounded_tokens,
 )
@@ -186,3 +187,68 @@ def test_the_identifier_probe_still_reports_alongside_the_figure_probe() -> None
     )
     codes = [v.code for v in check_groundedness(response, PROMPT_WITH_READINGS)]
     assert codes == ["ungrounded_figure", "ungrounded_reference"], "both, and figures first"
+
+
+# --- the third probe: a mechanism nobody was shown --------------------------
+
+REAL_COMMENT = """\
+### 📈 Growth Opportunities
+
+- **Style alignment**: The Algorithm has observed 20 style diagnostics across
+  your submission. Next iteration could systematically address these, which
+  would further increase your velocity score's coverage component.
+
+### 🔧 Recommended Iteration
+
+Run your style tool against it in isolation, resolve those diagnostics, and
+commit that single file. This will raise your velocity score's lint component.
+"""
+
+
+def test_the_review_shodann_wrote_about_its_own_pull_request_is_caught() -> None:
+    """Verbatim from the comment SHODANN posted on PR #61 on 2026-07-29.
+
+    Style diagnostics feed the lint term and do not touch coverage, and the
+    same comment said both things about the same suggested action three
+    paragraphs apart. Every existing check passed it: no identifier was quoted,
+    so `ungrounded_tokens` saw nothing, and the clause carries no figure, so
+    `ungrounded_percentages` - which exists *because* of the identical
+    style-to-coverage fabrication with a 98 attached - saw nothing either.
+
+    Blocking rather than advisory. A citizen sent to fix style diagnostics
+    because it will raise their coverage has been sent to do work that cannot
+    succeed, and there is no reading of that which helps them.
+    """
+    findings = check_groundedness(REAL_COMMENT, prompt="Coverage: 97.6%. Style issues: 20.")
+    attribution = [f for f in findings if f.code == "ungrounded_attribution"]
+
+    assert attribution, "the fabrication that survived both existing probes"
+    assert attribution[0].severity == BLOCKING
+    assert "coverage component" in attribution[0].evidence.lower()
+    assert "lint component" in attribution[0].evidence.lower(), (
+        "both halves, not just the wrong one"
+    )
+
+
+def test_naming_a_reading_without_attributing_it_is_fine() -> None:
+    """The probe must not cost SHODANN the ability to report a measurement.
+
+    "Coverage is 97.6%" and "20 style diagnostics" are the whole point of the
+    comment. What is forbidden is claiming to know how they combine.
+    """
+    clean = (
+        "Coverage reads 97.6% and the style tool reported 20 diagnostics. "
+        "The Algorithm suggests resolving one file's diagnostics this iteration."
+    )
+    assert ungrounded_attribution(clean, prompt="Coverage: 97.6%") == []
+
+
+def test_a_composition_the_prompt_does_state_is_grounded() -> None:
+    """If a template ever supplies the formula, this rule retires itself.
+
+    Written this way so the check cannot outlive its reason and become a rule
+    nobody can find the justification for.
+    """
+    assert ungrounded_attribution(
+        "This raises the coverage term.", prompt="The coverage term is weighted 2.0."
+    ) == []
