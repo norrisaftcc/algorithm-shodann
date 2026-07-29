@@ -9,10 +9,13 @@ from __future__ import annotations
 import json
 
 from shodann.analysis import (
+    TEST_REPORT,
     AnalysisReports,
     read_complexity,
     read_coverage,
     read_lint_issues,
+    read_syntax_errors,
+    read_test_outcomes,
 )
 from shodann.review import collect_metrics
 
@@ -27,11 +30,11 @@ def write(path, payload) -> str:
 
 def test_coverage_is_read_from_the_report(tmp_path) -> None:
     path = write(tmp_path / "coverage.json", {"totals": {"percent_covered": 87.4321}})
-    assert read_coverage(path) == (87.4, None, None)
+    assert read_coverage(path) == 87.4
 
 
 def test_a_missing_report_is_absent_not_zero(tmp_path) -> None:
-    assert read_coverage(tmp_path / "nope.json") == (None, None, None)
+    assert read_coverage(tmp_path / "nope.json") is None
     assert not AnalysisReports.from_directory(tmp_path).coverage_instrumented
 
 
@@ -39,13 +42,13 @@ def test_a_truncated_report_degrades_rather_than_raising(tmp_path) -> None:
     path = tmp_path / "coverage.json"
     path.write_text('{"totals": {"percent_cov', encoding="utf-8")
 
-    assert read_coverage(path) == (None, None, None), "a malformed report is a missing report"
+    assert read_coverage(path) is None, "a malformed report is a missing report"
 
 
 def test_a_report_without_totals_is_absent(tmp_path) -> None:
     """The analysis job writes `{}` when pytest produced nothing at all."""
     path = write(tmp_path / "coverage.json", {})
-    assert read_coverage(path) == (None, None, None)
+    assert read_coverage(path) is None
 
 
 def test_genuine_zero_coverage_is_instrumented(tmp_path) -> None:
@@ -168,3 +171,126 @@ def test_complexity_reaches_the_metrics_from_the_report(tmp_path) -> None:
     assert metrics.complexity != metrics.functions, (
         "these were the same number for as long as nothing measured C901"
     )
+
+
+# --- syntax ---------------------------------------------------------------
+
+
+def test_files_that_do_not_parse_are_counted(tmp_path) -> None:
+    path = write(
+        tmp_path / "ruff.json",
+        [diagnostic("invalid-syntax"), diagnostic("invalid-syntax"), diagnostic("E501")],
+    )
+    assert read_syntax_errors(path) == 2
+
+
+def test_a_clean_parse_is_a_measured_zero(tmp_path) -> None:
+    path = write(tmp_path / "ruff.json", [diagnostic("E501")])
+    assert read_syntax_errors(path) == 0, "every file parsed is an answer, not a gap"
+
+
+def test_no_ruff_run_is_absent_not_a_clean_parse(tmp_path) -> None:
+    """The whole point. "Nothing failed to compile" and "nobody checked" differ."""
+    assert read_syntax_errors(tmp_path / "nope.json") is None
+
+
+def test_syntax_diagnostics_stay_inside_the_frozen_lint_count(tmp_path) -> None:
+    """`lint_issues` is a score input; netting the syntax errors out would move it."""
+    path = write(tmp_path / "ruff.json", [diagnostic("invalid-syntax"), diagnostic("E501")])
+    assert read_lint_issues(path) == 2
+    assert read_syntax_errors(path) == 1
+
+
+# --- test outcomes --------------------------------------------------------
+
+
+def junit(tmp_path, **attributes) -> str:
+    rendered = " ".join(f'{name}="{value}"' for name, value in attributes.items())
+    path = tmp_path / TEST_REPORT
+    path.write_text(
+        f'<?xml version="1.0" encoding="utf-8"?>'
+        f'<testsuites name="pytest tests"><testsuite name="pytest" {rendered}>'
+        f"</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+    return str(path)
+
+
+def test_a_green_run_reads_as_all_passing(tmp_path) -> None:
+    path = junit(tmp_path, errors=0, failures=0, skipped=0, tests=324)
+    assert read_test_outcomes(path) == (324, 0)
+
+
+def test_a_fully_red_suite_is_the_case_this_exists_for(tmp_path) -> None:
+    """The defect: a citizen with eleven failures was told nothing had failed."""
+    path = junit(tmp_path, errors=0, failures=11, skipped=0, tests=11)
+    assert read_test_outcomes(path) == (0, 11)
+
+
+def test_a_collection_error_counts_as_a_pre_success_state(tmp_path) -> None:
+    """A test whose fixture blew up never ran, but the citizen's next move is the same."""
+    path = junit(tmp_path, errors=1, failures=1, skipped=1, tests=5)
+    assert read_test_outcomes(path) == (2, 2), "pytest itself reports 1 failed, 2 passed"
+
+
+def test_skips_are_neither_passed_nor_failed(tmp_path) -> None:
+    path = junit(tmp_path, errors=0, failures=0, skipped=3, tests=10)
+    assert read_test_outcomes(path) == (7, 0)
+
+
+def test_an_absent_report_is_not_a_run_where_nothing_failed(tmp_path) -> None:
+    assert read_test_outcomes(tmp_path / TEST_REPORT) == (None, None)
+    assert not AnalysisReports.from_directory(tmp_path).tests_instrumented
+
+
+def test_a_report_without_a_total_is_absent(tmp_path) -> None:
+    path = junit(tmp_path, errors=0, failures=0)
+    assert read_test_outcomes(path) == (None, None)
+
+
+def test_truncated_xml_degrades_rather_than_raising(tmp_path) -> None:
+    path = tmp_path / TEST_REPORT
+    path.write_text('<testsuites><testsuite tests="4" fail', encoding="utf-8")
+    assert read_test_outcomes(path) == (None, None)
+
+
+def test_a_nonsense_count_never_yields_a_negative_pass_tally(tmp_path) -> None:
+    """A floor, so a malformed report cannot hand the prompt "-6 passed" to praise."""
+    path = junit(tmp_path, errors=0, failures=9, skipped=0, tests=3)
+    passed, failed = read_test_outcomes(path)
+    assert (passed, failed) == (0, 9)
+
+
+def test_a_declaration_is_refused_even_when_the_document_is_otherwise_fine(tmp_path) -> None:
+    """A pytest report has no DOCTYPE, so one is a reason to stop reading.
+
+    Written this way after the first version proved nothing. That one fed in a
+    billion-laughs and asserted `(None, None)` - which it got with the guard
+    *removed*, because CPython's expat caps internal entity expansion on its
+    own. A guard whose test passes without it is not a guard, it is a comment.
+
+    So the document here is valid, parseable, and would yield `(7, 2)` from any
+    reader that looked. Only the declaration makes it refusable, which means
+    deleting the check turns this red.
+
+    The policy is worth having on top of the parser's own limits: "already
+    fails" is a property of the interpreter this happens to run on, and the
+    job doing the parsing holds the write token and the model key.
+    """
+    path = tmp_path / TEST_REPORT
+    path.write_text(
+        '<?xml version="1.0"?>\n'
+        '<!DOCTYPE testsuites [<!ENTITY greeting "hello">]>\n'
+        '<testsuites><testsuite tests="9" failures="2" errors="0" skipped="0">'
+        "</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+    assert read_test_outcomes(path) == (None, None)
+
+
+def test_the_tallies_reach_the_reports_object(tmp_path) -> None:
+    junit(tmp_path, errors=0, failures=2, skipped=0, tests=9)
+    reports = AnalysisReports.from_directory(tmp_path)
+
+    assert (reports.tests_passed, reports.tests_failed) == (7, 2)
+    assert reports.tests_instrumented

@@ -146,6 +146,12 @@ def collect_metrics(
         functions=functions,
         docstrings=docstrings,
         lint_issues=reports.lint_issues or 0,
+        # Declared since the port and never once assigned, so every ledger ever
+        # written recorded `syntax_errors: 0` for a repository nothing had
+        # checked. Same `or 0` as the two fields above, and tolerable for the
+        # same reason: no score term reads it, and the prompt takes its
+        # syntax figure from `reports`, where absent is still absent.
+        syntax_errors=reports.syntax_errors or 0,
     )
 
 
@@ -227,6 +233,32 @@ def _coverage_reading(reports: AnalysisReports, record: CitizenRecord, first: bo
     return f"{current} Unchanged from {previous}%."
 
 
+def _test_reading(reports: AnalysisReports) -> str:
+    """One sentence of outcomes, or none at all.
+
+    The degraded comment is the review most citizens actually receive, and it
+    is billed as instrument readings. A tally is now an instrument reading, so
+    leaving it out would put this section a measurement behind the prompt -
+    and two sections of one comment disagreeing about what ran is the exact
+    defect `EARLY_RUNS.md` 9 records.
+
+    Silent when unmeasured, rather than saying so. Coverage earns its "not
+    measured this cycle" sentence because a citizen chases the number and will
+    wonder where it went; nobody is chasing a tally, and spending words to
+    announce the absence of something never promised is the mode padding
+    itself. No claim is still the point - the citizen is told nothing rather
+    than told a zero.
+    """
+    if not reports.tests_instrumented:
+        return ""
+    if reports.tests_failed:
+        return (
+            f"Tests: {reports.tests_passed} passed, {reports.tests_failed} "
+            "in a pre-success state - each one is a specific, findable next step."
+        )
+    return f"Tests: {reports.tests_passed} passed, none in a pre-success state."
+
+
 def reduced_allocation_comment(
     facts: dict,
     result: VelocityResult,
@@ -263,15 +295,32 @@ def reduced_allocation_comment(
             "that you have arrived."
         )
 
-    coverage = _coverage_reading(reports or AnalysisReports(), record, first)
+    reports = reports or AnalysisReports()
+    coverage = _coverage_reading(reports, record, first)
+    tests = _test_reading(reports)
+    readings = "\n\n".join(line for line in (coverage, tests) if line)
     celebrations = "\n".join(f"- {line}" for line in result.celebrations[:3])
     # Citizen Zero, reading this cold: "a review that leaves you with nothing
     # to do has failed." An empty section is not neutral - it is a dead end.
-    opportunities = "\n".join(f"- {line}" for line in result.opportunities) or (
-        "- Nothing in these readings raised one. If you want a next step anyway: "
-        "run your tests locally before your next push, so you see a failure "
-        "before The Algorithm does."
-    )
+    #
+    # The tally gets first refusal on the filler. `calculate_velocity` never
+    # sees a pass/fail count, so with the tallies newly wired this section
+    # printed "Nothing in these readings raised one" directly beneath a line
+    # reporting eleven tests in a pre-success state - two sections of one
+    # comment disagreeing about the same submission, which is `EARLY_RUNS.md`
+    # 9 exactly. Caught by rendering it and reading it, as that entry was.
+    if reports.tests_failed:
+        filler = (
+            "- Take the first test in a pre-success state and make it pass. "
+            "One is a smaller job than eleven, and the second is easier than the first."
+        )
+    else:
+        filler = (
+            "- Nothing in these readings raised one. If you want a next step anyway: "
+            "run your tests locally before your next push, so you see a failure "
+            "before The Algorithm does."
+        )
+    opportunities = "\n".join(f"- {line}" for line in result.opportunities) or filler
 
     return f"""## \U0001f916 SHODANN Analysis Complete
 
@@ -297,7 +346,7 @@ is yours. Please verify anything that matters.
 Submission {record.pr_count}. {result.iterations} commit(s), \
 {facts["files_changed"]} file(s) touched. Velocity score: {result.score}.
 
-{coverage}
+{readings}
 
 {scale_note}
 
@@ -529,9 +578,12 @@ def review(
             # The same spec the response will be judged against, so the
             # instructions and the checks cannot disagree.
             spec=spec,
-            # An absent reading is not a zero. Saying so is the difference
-            # between a model reporting a gap and a model celebrating one.
-            coverage_instrumented=reports.coverage_instrumented,
+            # The whole object, not the one attribute this line used to read.
+            # Every reading it carries is a fact the model is about to speak
+            # about; an absent one is not a zero, and saying so is the
+            # difference between a model reporting a gap and a model
+            # celebrating one.
+            reports=reports,
         )
         # Note the asymmetry: `root` is the citizen's repository, but the
         # prompt library is SHODANN's own and is read relative to the working

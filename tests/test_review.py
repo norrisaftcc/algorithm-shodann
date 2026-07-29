@@ -766,7 +766,9 @@ def test_the_degraded_spec_leaves_room_for_the_disclosure() -> None:
 
 
 @pytest.mark.parametrize("band", [1, 2, 3, 4, 5, 6])
-def test_the_posted_comment_respects_its_cap_at_every_band(band: int, monkeypatch) -> None:
+def test_the_posted_comment_respects_its_cap_at_every_band(
+    band: int, monkeypatch, tmp_path
+) -> None:
     """The whole comment is what the contract caps, footer included.
 
     Measured against this repository rather than an empty temporary one: the
@@ -779,9 +781,17 @@ def test_the_posted_comment_respects_its_cap_at_every_band(band: int, monkeypatc
     cap post over it, and the degraded path had no headroom at all: ~235 words
     of fixed text against a 250-word cap. Every test citizen was RED, so
     nothing saw it.
+
+    Reports are supplied for the same reason the root is real: the readout
+    grows by a sentence when a tally exists, and the failing branch is the
+    longest of them. Measuring the shortest possible comment against the cap
+    is the mistake this docstring already records once.
     """
     monkeypatch.setattr("shodann.review.read_clearance", lambda citizen, root: band)
-    body = review(EVENT, root=".", config=LLMConfig(), write_state=False)
+    reports = _reports_dir(tmp_path, _suite(tests=11, failures=11), coverage=4.0)
+    body = review(
+        EVENT, root=".", reports_dir=reports, config=LLMConfig(), write_state=False
+    )
 
     assert not blocks_posting(validate(body, REDUCED_ALLOCATION)), (
         f"band {band}: {len(body.split())} words"
@@ -801,3 +811,139 @@ def test_the_disclosure_costs_the_model_words_rather_than_the_citizen(tmp_path) 
     review(EVENT, root=tmp_path, config=CONFIG, opener=capture, write_state=False)
 
     assert "370" in seen["prompt"], "400 minus the 30 reserved for the footer"
+
+
+# --- the tallies reach the model, not just the reader ---------------------
+
+
+def _reports_dir(tmp_path, xml: str, coverage: float | None = None):
+    directory = tmp_path / "shodann-reports"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "tests.xml").write_text(xml, encoding="utf-8")
+    (directory / "ruff.json").write_text('[{"code": "E501"}]', encoding="utf-8")
+    if coverage is not None:
+        (directory / "coverage.json").write_text(
+            json.dumps({"totals": {"percent_covered": coverage}}), encoding="utf-8"
+        )
+    return directory
+
+
+def _suite(tests: int, failures: int) -> str:
+    return (
+        '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" '
+        f'errors="0" failures="{failures}" skipped="0" tests="{tests}">'
+        "</testsuite></testsuites>"
+    )
+
+
+def _capture(seen: dict):
+    def opener(request, timeout=None):
+        seen["prompt"] = json.loads(request.data)["messages"][0]["content"]
+        payload = {"choices": [{"message": {"content": GOOD_RESPONSE}}]}
+        return io.BytesIO(json.dumps(payload).encode())
+
+    return opener
+
+
+def test_the_real_tallies_reach_the_prompt_the_model_is_shown(tmp_path) -> None:
+    """S1-06, asserted at the seam it actually broke at.
+
+    Every reader below this line was correct. `AnalysisReports` declared the
+    tallies, `read_coverage` looked for them, the template had rows for them -
+    and `review()` called `build_context` without passing any of it, so the
+    defaults took over and every review ever composed said zero passed and
+    zero failed. Nothing failed at the unit level, because no unit was wrong.
+
+    So this asserts the wiring rather than the function: run the whole thing
+    and read the bytes that left for the model.
+    """
+    seen: dict = {}
+    reports = _reports_dir(tmp_path, _suite(tests=9, failures=2), coverage=61.0)
+
+    review(
+        EVENT,
+        root=tmp_path,
+        reports_dir=reports,
+        config=CONFIG,
+        opener=_capture(seen),
+        write_state=False,
+    )
+
+    assert "| **Tests Passed** | 7 |" in seen["prompt"]
+    assert "| **Tests Failed** | 2 |" in seen["prompt"]
+    assert "7 passed, 2 in a pre-success state." in seen["prompt"]
+    assert "**Style Issues**: 1 alignment opportunities" in seen["prompt"]
+    assert "**Syntax Status**: 0 compilation barriers detected" in seen["prompt"]
+
+
+def test_a_citizen_with_a_red_suite_is_never_described_as_having_none(tmp_path) -> None:
+    """The harm, stated as the thing that must not appear in the prompt."""
+    seen: dict = {}
+    reports = _reports_dir(tmp_path, _suite(tests=11, failures=11), coverage=4.0)
+
+    review(
+        EVENT,
+        root=tmp_path,
+        reports_dir=reports,
+        config=CONFIG,
+        opener=_capture(seen),
+        write_state=False,
+    )
+
+    assert "| **Tests Failed** | 11 |" in seen["prompt"]
+    assert "| **Tests Failed** | 0 |" not in seen["prompt"]
+    assert "No tests executed." not in seen["prompt"], "the phrase that stood in for a tally"
+
+
+def test_no_report_directory_says_so_instead_of_reporting_zeros(tmp_path) -> None:
+    """The default that used to be a lie."""
+    seen: dict = {}
+
+    review(EVENT, root=tmp_path, config=CONFIG, opener=_capture(seen), write_state=False)
+
+    assert "Test outcomes were not measured this cycle." in seen["prompt"]
+    assert "| **Tests Passed** |" not in seen["prompt"], "a row implies a reading"
+    assert "Nothing checked whether this code parses." in seen["prompt"]
+    assert "No style tool ran this cycle." in seen["prompt"]
+
+
+def test_the_degraded_readout_reports_the_tally_it_now_has(tmp_path) -> None:
+    """Two sections of one comment must not disagree about what ran.
+
+    The degraded comment is billed as instrument readings, and a tally became
+    an instrument reading. `EARLY_RUNS.md` 9 is a comment whose two sections
+    contradicted each other about coverage while 243 tests passed.
+    """
+    reports = _reports_dir(tmp_path, _suite(tests=11, failures=11), coverage=4.0)
+
+    body = review(
+        EVENT, root=tmp_path, reports_dir=reports, config=LLMConfig(), write_state=False
+    )
+
+    assert "11 in a pre-success state" in body
+    assert not blocks_posting(validate(body, REDUCED_ALLOCATION))
+
+
+def test_the_degraded_readout_stays_silent_rather_than_reporting_zero(tmp_path) -> None:
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    assert "Tests:" not in body, "no tally is not a tally of zero"
+
+
+def test_a_red_suite_is_never_told_nothing_raised_an_opportunity(tmp_path) -> None:
+    """Found by rendering the comment and reading it, not by any assertion.
+
+    `calculate_velocity` never sees a pass/fail count, so with the tallies
+    newly wired the degraded comment printed "Nothing in these readings raised
+    one" directly beneath a line reporting eleven tests in a pre-success state.
+    Both sentences were true of their own inputs and the pair was nonsense.
+    """
+    reports = _reports_dir(tmp_path, _suite(tests=11, failures=11), coverage=4.0)
+
+    body = review(
+        EVENT, root=tmp_path, reports_dir=reports, config=LLMConfig(), write_state=False
+    )
+
+    assert "11 in a pre-success state" in body
+    assert "Nothing in these readings raised one" not in body
+    assert not blocks_posting(validate(body, REDUCED_ALLOCATION))

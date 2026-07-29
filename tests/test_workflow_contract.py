@@ -194,3 +194,56 @@ def test_no_citizen_text_is_interpolated_into_a_shell(workflow: str) -> None:
     """The defect in design_docs/shodann-core.yml:131, asserted against."""
     for field in ("pull_request.title", "pull_request.body"):
         assert f"${{{{ github.event.{field} }}}}" not in workflow
+
+
+# --- the tallies have a producer, and it survives an edit ------------------
+
+
+def test_the_suite_writes_a_machine_readable_tally(workflow: str) -> None:
+    """S1-07. `pytest -q` prints its tally to a stdout this workflow discards.
+
+    `AnalysisReports` declared `tests_passed` and `tests_failed`, `read_coverage`
+    looked for them in a file coverage.py does not write them to, and the
+    template had rows for them - a complete reader with no producer anywhere.
+    So the DATA layer substituted zeros and a citizen with a red suite was told
+    nothing had failed.
+    """
+    assert "--junitxml=tests.xml" in workflow, "the only tally pytest records to a file"
+
+
+def test_the_tally_is_handed_to_the_privileged_job(workflow: str) -> None:
+    """Writing a report and not uploading it is the same as not writing it."""
+    artifact = workflow.split("Hand the readings over")[1].split("  review:")[0]
+
+    for report in ("coverage.json", "ruff.json", "tests.xml"):
+        assert report in artifact, f"{report} never leaves the analysis job"
+
+
+# --- a report is a tool's output, never a repository's content -------------
+
+
+def test_stale_reports_are_deleted_before_the_tools_run(workflow: str) -> None:
+    """A citizen could ship us their own coverage figure, and it counted.
+
+    `> ruff.json` truncates, so ruff was safe. Coverage was not: the step ends
+    in `test -f coverage.json || echo '{}'`, a guard for pytest-cov writing
+    nothing. Commit a `coverage.json` claiming 97% and break your own test
+    collection - pytest-cov writes nothing, the guard finds the committed file
+    and leaves it, and it rides the artifact into the 2.0-weighted term.
+    Reproduced end to end before this assertion was written.
+
+    Same family as `--isolated` and `--cov=src`: nothing feeding the score may
+    be chosen by the citizen being scored.
+    """
+    analyse = workflow.split("analyse:")[1].split("  review:")[0]
+    removal = analyse.index("rm -f")
+
+    for report in ("coverage.json", "ruff.json", "tests.xml"):
+        assert report in analyse[removal : removal + 120], f"{report} survives a hostile commit"
+
+    # The invocations, not the install step - `pip install ... pytest` appears
+    # first and would make this assertion pass while proving nothing.
+    for invocation in ("ruff check . --isolated", 'pytest "--cov=$COV"'):
+        assert removal < analyse.index(invocation), (
+            "deleting after the tools run protects nothing"
+        )

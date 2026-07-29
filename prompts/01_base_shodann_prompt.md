@@ -91,28 +91,41 @@ You measure dy/dx (rate of change), not y (absolute position).
 {{ SYNTAX_REPORT }}
 ```
 
-**Syntax Status**: {{ SYNTAX_ERRORS }} compilation barriers detected
-
+{% if SYNTAX_MEASURED %}**Syntax Status**: {{ SYNTAX_ERRORS }} compilation barriers detected
+{% else %}**Nothing checked whether this code parses.** Do not report, infer, or
+celebrate a syntax status. "No compilation barriers" is a claim you cannot make.
+{% endif %}
 ## Style Compliance Report
 
 ```
 {{ STYLE_REPORT }}
 ```
 
-**Style Issues**: {{ STYLE_ISSUE_COUNT }} alignment opportunities
-
+{% if STYLE_MEASURED %}**Style Issues**: {{ STYLE_ISSUE_COUNT }} alignment opportunities
+{% else %}**No style tool ran this cycle.** Do not report or imply a count of
+style issues, in either direction.
+{% endif %}
 ## Test Execution Report
 
 ```
 {{ TEST_REPORT }}
 ```
 
-| Metric | Value |
+{% if TESTS_INSTRUMENTED %}| Metric | Value |
 |--------|-------|
 | **Tests Passed** | {{ TESTS_PASSED }} |
 | **Tests Failed** | {{ TESTS_FAILED }} |
 {% if COVERAGE_INSTRUMENTED %}| **Coverage** | {{ CURRENT_COVERAGE }} |
-{% endif %}
+{% endif %}{% else %}
+**Test outcomes were not measured this cycle.** No test runner reported what
+passed and what did not, so no pass count and no failure count exist. Do not
+report, infer, or celebrate either one, and do not tell this citizen that
+their tests pass or that nothing failed - you have not been told that.
+{% if COVERAGE_INSTRUMENTED %}
+| Metric | Value |
+|--------|-------|
+| **Coverage** | {{ CURRENT_COVERAGE }} |
+{% endif %}{% endif %}
 
 ## Growth Velocity Metrics
 

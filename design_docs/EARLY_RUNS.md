@@ -222,13 +222,52 @@ That rule governs student distress, academic-integrity concerns, and accessibili
 
 ---
 
+## 12. The citizen could ship us their own coverage figure
+
+**Where:** reading the analysis job while wiring the test tallies into it, 2026-07-29. Then reproduced in a scratch repository before a line was changed, because a plausible exploit and a real one are different claims.
+
+**What was wrong:** nothing deleted the report files before the tools wrote them. `ruff check ... > ruff.json` truncates first, so ruff was safe by accident of shell syntax. Coverage was not. Its step ends in `test -f coverage.json || echo '{}' > coverage.json`, a guard for the case where pytest-cov produced nothing.
+
+So: commit a `coverage.json` claiming 97.4%, then break your own test collection with one bad import. pytest exits on a collection error, pytest-cov writes no report, `|| true` swallows the exit code, the `test -f` guard finds the *committed* file and leaves it alone, and the upload step hands it to the privileged job as a measurement. Coverage is the 2.0-weighted term.
+
+```
+$ pytest --cov=src --cov-report=json:coverage.json -q
+ERROR test_broken.py - ModuleNotFoundError: No module named 'does_not_exist_anywhere'
+$ cat coverage.json
+{"totals": {"percent_covered": 97.4}}
+```
+
+**Why it kept hiding:** it is the third instance of one rule — *anything feeding the score must not be choosable by the citizen being scored* — and the first two (entry 10) were both about **flags**. This one is about a **file**, so no amount of staring at `--isolated` and `--cov=src` finds it. The guard that made it exploitable was itself defensive: someone thought about pytest-cov failing and handled it, and the handler trusted the working directory.
+
+**What changed:** `rm -f coverage.json ruff.json tests.xml` as its own step before the tools run, with a contract test that asserts both the deletion and its position relative to the invocations. On the freeze clock, like entry 10: free to fix now, impossible after cohort 1's first submission.
+
+---
+
+## 13. The guard that passed with the guard removed
+
+**Where:** the same day, verifying the above by reverting each new guard against the defect it was written for.
+
+Reading a citizen-produced `tests.xml` meant parsing XML in the job that holds the write token and the model key, so it got a check that refuses any document carrying a `<!DOCTYPE>` or `<!ENTITY>` declaration, and a test that feeds it a billion-laughs bomb and asserts the reader returns *not measured*.
+
+**The test passed with the check deleted.** CPython's expat caps internal entity expansion on its own, so the bomb failed to parse either way and the assertion could not tell the two situations apart. Eight other probes that day failed correctly; this one had been green from the moment it was written, against nothing.
+
+Rewritten to feed in a **valid, parseable** document — one that any reader which looked would answer `(7, 2)` for — whose only disqualifying feature is the declaration. Deleting the check now turns it red.
+
+**The generalisation, and it is the sharper half of this file:** *a test written against a defect you have already fixed proves nothing until you put the defect back.* Entry 9's lesson was that a green suite can pass through a broken system. This one is narrower and worse — a green suite can pass through a guard that does not exist. The cost of finding out is one revert and one test run, and there is no substitute, because the failure mode is silence.
+
+Two other things on this page were caught by the same move. The word-cap regression test at `tests/test_review.py:768` passed against the defect it was written for, because an empty temporary repository produces a comment 37 words shorter than a real one. And the first version of this session's ordering assertion passed a mutation that only *renamed* the deletion step without moving it — the probe was wrong, not the test, which is its own reminder to check what a passing probe actually proved.
+
+---
+
 ## What the pattern says
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
 
-Two of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that caught a comment disagreeing with itself.
+**Three** of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that catches a comment disagreeing with itself — and it caught one again on the day entry 12 was written. Wiring the real test tallies in put a truthful line reading *"0 passed, 11 in a pre-success state"* directly above a section that said *"Nothing in these readings raised one."* Both sentences were true of their own inputs, because the velocity engine has never been shown a pass/fail count. The pair was nonsense, no assertion could see it, and one read of the rendered comment could not miss it.
 
-The last two needed a different move again: **reading with something withheld.** Entry 10 came from five surveyors who each saw one scope and could not see the others, plus a critic asked only what falls between them. Entry 11 came from readers who were given a document and denied any knowledge of what it was for. Every technique on this page works by removing context from the reader — running the system removes the author's knowledge of what it *should* do, and a blind read removes the reader's ability to supply what the document failed to say. A reviewer who knows the intent will unconsciously fill the gap and report that there wasn't one.
+Entry 13 adds a fourth technique, and it is the cheapest one here: **put the defect back.** A guard is a claim that something would otherwise break, and the claim is untested until you break it. One revert and one test run per guard, and the reward is finding the assertions that have been green since birth against nothing at all.
+
+Two of them needed a different move again: **reading with something withheld.** Entry 10 came from five surveyors who each saw one scope and could not see the others, plus a critic asked only what falls between them. Entry 11 came from readers who were given a document and denied any knowledge of what it was for. Every technique on this page works by removing context from the reader — running the system removes the author's knowledge of what it *should* do, and a blind read removes the reader's ability to supply what the document failed to say. A reviewer who knows the intent will unconsciously fill the gap and report that there wasn't one.
 
 The two agents caught different things and neither caught these: `oracle-warden` verifies what is checkable mechanically, `clive-prompt-warden` verifies what is consistent across documents. Neither can see what only appears when a real event payload meets a real runner.
 
