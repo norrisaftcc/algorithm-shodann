@@ -62,7 +62,7 @@ You measure dy/dx (rate of change), not y (absolute position).
 | **Clearance Level** | {{ CLEARANCE_NAME }} ({{ CLEARANCE_NUMBER }}) |
 | **Program Week** | {{ CURRENT_WEEK }} |
 | **Submission Number** | {{ PR_COUNT }} - this one, counting from their first |
-{% if COVERAGE_INSTRUMENTED %}| **Last Coverage** | {{ PREV_COVERAGE }} |
+{% if COVERAGE_INSTRUMENTED %}| **Last line coverage** | {{ PREV_COVERAGE }} |
 {% endif %}| **Iteration Streak** | unbroken - every submission so far counted, whatever each scored |
 
 ## Submission Context
@@ -115,7 +115,7 @@ style issues, in either direction.
 |--------|-------|
 | **Tests Passed** | {{ TESTS_PASSED }} |
 | **Tests Failed** | {{ TESTS_FAILED }} |
-{% if COVERAGE_INSTRUMENTED %}| **Coverage** | {{ CURRENT_COVERAGE }} |
+{% if COVERAGE_INSTRUMENTED %}| **Line coverage** | {{ CURRENT_COVERAGE }} |
 {% endif %}{% else %}
 **Test outcomes were not measured this cycle.** No test runner reported what
 passed and what did not, so no pass count and no failure count exist. Do not
@@ -124,14 +124,14 @@ their tests pass or that nothing failed - you have not been told that.
 {% if COVERAGE_INSTRUMENTED %}
 | Metric | Value |
 |--------|-------|
-| **Coverage** | {{ CURRENT_COVERAGE }} |
+| **Line coverage** | {{ CURRENT_COVERAGE }} |
 {% endif %}{% endif %}
 
 ## Growth Velocity Metrics
 
 | Metric | Previous | Current | Delta |
 |--------|----------|---------|-------|
-{% if COVERAGE_INSTRUMENTED %}| **Coverage** | {{ PREV_COVERAGE }} | {{ CURRENT_COVERAGE }} | {{ COVERAGE_DELTA }} |
+{% if COVERAGE_INSTRUMENTED %}| **Line coverage** | {{ PREV_COVERAGE }} | {{ CURRENT_COVERAGE }} | {{ COVERAGE_DELTA }} |
 {% endif %}| **Functions over the branch threshold** | {{ PREV_COMPLEXITY }} | {{ CURRENT_COMPLEXITY }} | {{ COMPLEXITY_DELTA }} |
 
 A **0** in that row is a measurement and a good one: it means no function in the
@@ -139,6 +139,13 @@ submission exceeded the branch threshold. It does not mean complexity was not
 measured. If a reading was not taken, its row is absent from this prompt
 entirely - so never describe a number you can see as missing, unrecorded or
 not captured.
+
+**The coverage figure is line coverage and nothing else.** Branch coverage, path
+coverage and condition coverage were not measured; no report here contains them,
+and the word "branch" above belongs to the complexity row, which counts
+functions rather than measuring coverage of anything. Never name a kind of
+coverage other than line coverage, and never say which lines or paths are
+uncovered - you have the percentage and not the report it came from.
 {% if not COVERAGE_INSTRUMENTED %}
 **Coverage was not measured this cycle.** No coverage tool ran, so no coverage
 figure and no coverage delta exist. Do not report, infer, or celebrate a

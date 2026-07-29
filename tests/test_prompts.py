@@ -192,7 +192,9 @@ def test_uninstrumented_coverage_says_so_rather_than_reporting_zero() -> None:
 def test_instrumented_coverage_still_reports_normally() -> None:
     rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
 
-    assert "**Coverage**" in rendered
+    assert "**Line coverage**" in rendered, (
+        "the unit is part of the label - see the branch-coverage test"
+    )
     assert "Coverage was not measured" not in rendered
 
 
@@ -316,7 +318,7 @@ def test_coverage_still_reports_when_only_the_tests_went_unmeasured() -> None:
     """The two readings are independent, and one gap must not swallow the other."""
     rendered = render_prompt(sample_context(AnalysisReports(coverage=52.0)), prompts_dir=PROMPTS)
 
-    assert "**Coverage**" in rendered
+    assert "**Line coverage**" in rendered
     assert "Coverage was not measured" not in rendered
     assert "Test outcomes were not measured this cycle." in rendered
 

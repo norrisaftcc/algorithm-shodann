@@ -441,7 +441,19 @@ Two more that cost more than they should have:
 
 **What is still open after eight runs: S1-45.** Every reading handed to the model as a bare total gets its missing context invented. Twenty style diagnostics with no categories produced guessed categories (*"likely spacing or naming conventions"* — they are mostly `C408`), then a guessed fixable count (*"clear the 20 in one pass"* — ruff reports 11 of 20 as fixable), and the advice remains unfollowable because the count itself is not reproducible: the analyse job measures with `ruff check . --isolated --extend-select C90` and `python scripts/dev.py check` reports zero. The invention stopped once entry 19's rule landed; the unfollowability did not. Passing through *what produced* a reading rather than only its total is the structural answer, and it is plumbing rather than wording.
 
-**The eighth review was clean.** All four probes returned empty against it, all six classes stayed fixed, and it is the first of the eight with no finding. That is what the loop going dry looks like, and it took eight runs rather than the two the first clean-looking round suggested.
+**23. A kind of coverage nobody measured.** Round nine, after a clean round eight.
+
+> *"maintaining this level while adding 2338 lines means some new code paths exist without **branch coverage**. Next iteration could explore whether any of those paths are testable"*
+
+The analyse job runs `pytest --cov=src --cov-report=json` with no `--cov-branch`, so **line** coverage is the only coverage this system has ever produced. There is no branch reading to maintain, no paths to enumerate, and nothing for the citizen to open.
+
+Entry 19's class in a new place — a real word from the prompt attached to a thing the prompt does not contain — and **the word came from us.** The complexity row was renamed *"Functions over the branch threshold"* one commit earlier, for entry 20, which put "branch" directly beneath two rows labelled only "Coverage" for a model to weld together.
+
+**The fix is a label, and the freeze is the reason it has to be.** Adding `--cov-branch` would make the sentence true and is not available: PRD section 8 freezes score inputs for cohort 1, coverage is the 2.0-weighted term, and replacing line coverage with branch coverage *changes* an existing signal rather than adding one — every stored baseline would silently start meaning something else. So the rows carry their unit, the prompt states which kinds do not exist, and a probe holds it.
+
+**Two of the nine rounds produced a defect caused by the previous round's fix**: round 4's "Submission Number minus one" handed the model a subtraction it performed, and round 4's rename supplied the word "branch". Neither was findable by reading the diff — both needed the next run. That is the argument for reading the output after *every* fix rather than after the last one.
+
+**The eighth review was clean, and the ninth was not.** All four probes returned empty against round eight, all six classes stayed fixed, and it was the first of the nine with no finding — then round nine produced entry 23. The honest summary is that this loop has not been observed to go dry: the longest clean streak is one run, and the first round that *looked* like convergence was round five, whose single finding turned out to be a fix no run had tested yet. Nine runs, seven classes, and a defect rate still above zero.
 
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.

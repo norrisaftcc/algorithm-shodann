@@ -13,6 +13,7 @@ from shodann.groundedness import (
     check_groundedness,
     clearance_promised_as_earned,
     constructs_claimed_in_data_files,
+    coverage_kinds_never_measured,
     ungrounded_attribution,
     ungrounded_percentages,
     ungrounded_tokens,
@@ -379,3 +380,77 @@ def test_talking_about_the_band_a_citizen_holds_stays_legal() -> None:
         "Pick one style diagnostic and fix that pattern everywhere.",
     ):
         assert clearance_promised_as_earned(benign) == [], benign
+
+
+# --- the sixth probe: a coverage the tools never produced --------------------
+
+
+def _real_prompt() -> str:
+    """The assembled prompt, not a stand-in.
+
+    A hand-written prompt string would decide this probe's own answer: the check
+    asks whether a coverage kind appears as a row label, so a fixture that omits
+    the rows passes everything and one that invents them passes nothing.
+    """
+    from shodann.prompts import render_prompt
+    from test_prompts import PROMPTS, sample_context
+
+    return render_prompt(sample_context(), prompts_dir=PROMPTS)
+
+
+def test_branch_coverage_is_not_a_reading_this_system_takes() -> None:
+    """Verbatim from SHODANN's ninth review of PR #61.
+
+        "maintaining this level while adding 2338 lines means some new code paths
+        exist without branch coverage. Next iteration could explore whether any
+        of those paths are testable"
+
+    The analyse job runs `pytest --cov=src --cov-report=json` with no
+    `--cov-branch`, so line coverage is the only coverage this system has ever
+    measured. There is no branch reading to maintain, no paths to enumerate and
+    nothing for the citizen to open.
+
+    Entry 19's class in a new place - a real word from the prompt attached to a
+    thing the prompt does not contain - and the word came from us. The complexity
+    row was renamed "Functions over the branch threshold" one commit earlier,
+    which put "branch" directly beneath the coverage rows for a model to weld
+    together. Two of the nine rounds produced a defect caused by the previous
+    round's fix, which is its own argument for reading the output after every one.
+    """
+    findings = check_groundedness(
+        "Some new code paths exist without branch coverage.", prompt=_real_prompt()
+    )
+    invented = [f for f in findings if f.code == "unmeasured_coverage_kind"]
+
+    assert invented, "branch coverage is not measured anywhere in this system"
+    assert invented[0].severity == BLOCKING
+
+
+def test_the_coverage_that_is_measured_stays_sayable() -> None:
+    """Reporting the reading is the point; only the invented kinds are barred.
+
+    The complexity row legitimately contains the word "branch" - it counts
+    functions over a branch threshold - so a probe that fired on "branch" alone
+    would reject the sentence the round-4 fix exists to produce.
+    """
+    real = _real_prompt()
+    for benign in (
+        "Line coverage moved from 97.4% to 97.6%.",
+        "Coverage climbed 0.2% this cycle.",
+        "Zero functions exceeded the branch threshold.",
+        "Consider splitting that branch into two functions.",
+    ):
+        assert coverage_kinds_never_measured(benign, real) == [], benign
+
+
+def test_measuring_it_later_retires_the_rule() -> None:
+    """Unlike the clearance probe, this one is safe to make prompt-relative.
+
+    The prompt names the forbidden kinds only inside a sentence that also names
+    line coverage, so it cannot read its own prohibition as a licence - the check
+    looks for the kind as a **bolded row label**, which is how a real reading
+    appears. Written this way so that turning on `--cov-branch` between cohorts
+    switches the rule off rather than leaving one nobody can find the reason for.
+    """
+    with_branch = "| **branch coverage** | 88.0% | 91.0% | +3.0% |"
+    assert coverage_kinds_never_measured("Branch coverage rose to 91%.", with_branch) == []

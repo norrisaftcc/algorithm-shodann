@@ -36,6 +36,7 @@ __all__ = [
     "check_groundedness",
     "clearance_promised_as_earned",
     "constructs_claimed_in_data_files",
+    "coverage_kinds_never_measured",
     "ungrounded_attribution",
     "ungrounded_percentages",
     "ungrounded_tokens",
@@ -209,6 +210,7 @@ def check_groundedness(
         + _attribution_findings(response, prompt)
         + _construct_findings(response)
         + _clearance_findings(response)
+        + _coverage_kind_findings(response, prompt)
     )
     invented = ungrounded_tokens(response, prompt)
     if not invented:
@@ -453,6 +455,78 @@ def _clearance_findings(response: str) -> list[Violation]:
             "A band is assigned by an instructor and no reading here is evidence "
             "about it. Give the advice on its own merits; never as a step toward "
             "a band.",
+            quoted,
+        )
+    ]
+
+
+_UNMEASURED_COVERAGE = re.compile(
+    r"\b(branch|path|condition|decision|mutation|statement)[\s-]+coverage\b"
+    r"|\bcoverage\s+(?:of\s+)?(?:branch|path|condition|decision)e?s?\b",
+    re.IGNORECASE,
+)
+
+
+def coverage_kinds_never_measured(response: str, prompt: str) -> list[str]:
+    """A kind of coverage the tools did not produce.
+
+    The analyse job runs `pytest --cov=src --cov-report=json` with no
+    `--cov-branch`, so the only coverage that exists anywhere in this system is
+    **line** coverage. SHODANN told the citizen:
+
+        "maintaining this level while adding 2338 lines means some new code paths
+        exist without branch coverage. Next iteration could explore whether any
+        of those paths are testable"
+
+    Branch coverage was never measured, so there is no reading to maintain, no
+    paths to enumerate, and nothing for the citizen to open. It is entry 19's
+    class in a new place - a real word from the prompt attached to a thing the
+    prompt does not contain - and the word came from us: the complexity row was
+    renamed "Functions over the branch threshold" one commit earlier, putting
+    "branch" directly beneath the coverage rows for a model to weld them
+    together.
+
+    **The fix is a label, and the freeze is why.** Adding `--cov-branch` would
+    make the claim true and is not available: PRD section 8 freezes score inputs
+    for cohort 1, coverage is the 2.0-weighted term, and switching line coverage
+    for branch coverage *changes* an existing signal rather than adding one. Every
+    stored baseline would silently mean something else. So the rows carry their
+    unit and the prompt says which kinds do not exist.
+
+    Checked against the prompt so that measuring branch coverage between cohorts
+    retires this by itself - and safely, unlike `clearance_promised_as_earned`,
+    because the prompt names the forbidden kinds only inside a sentence that also
+    names line coverage. A prompt that genuinely reports branch coverage will
+    have it in a row.
+    """
+    haystack = prompt.lower()
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for match in _UNMEASURED_COVERAGE.finditer(_prose(response)):
+        phrase = " ".join(match.group(0).split())
+        lowered = phrase.lower()
+        if lowered in seen or f"**{lowered}**" in haystack:
+            continue
+        seen.add(lowered)
+        found.append(phrase)
+    return found
+
+
+def _coverage_kind_findings(response: str, prompt: str) -> list[Violation]:
+    """Blocking. The citizen is sent to a report that does not exist."""
+    invented = coverage_kinds_never_measured(response, prompt)
+    if not invented:
+        return []
+    quoted = ", ".join(f'"{phrase}"' for phrase in invented)
+    return [
+        Violation(
+            "unmeasured_coverage_kind",
+            BLOCKING,
+            f"{quoted} name(s) a kind of coverage no tool here produced. The only "
+            "coverage measured is line coverage, and the word 'branch' in this "
+            "prompt belongs to a count of functions. Say line coverage or say "
+            "nothing about coverage.",
             quoted,
         )
     ]
