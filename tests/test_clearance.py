@@ -71,6 +71,11 @@ def test_the_prompt_states_the_opportunity_cap_the_validator_enforces(level: int
 def test_every_mode_agrees_with_its_own_spec(mode: str) -> None:
     """Not just the clearance bands - the edge-case handlers too."""
     spec = SPECS[mode]
+    if not spec.headings:
+        # reduced_allocation has no sections and never reaches a model: it is
+        # SHODANN's own text, emitted when synthesis did not happen at all.
+        # There is no prompt for the prompt and the spec to agree about.
+        pytest.skip(f"{mode} is not synthesised")
     rendered = rendered_for(2, spec)
 
     mark = "\U0001f50d" if spec.headings[-1] == "Observations" else "\U0001f527"

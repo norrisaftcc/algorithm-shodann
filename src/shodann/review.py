@@ -46,6 +46,7 @@ from .validator import (
     blocks_posting,
     for_clearance,
     format_retry_instruction,
+    unwrap_fenced_response,
     validate,
 )
 from .velocity import CodeMetrics, VelocityResult, calculate_velocity
@@ -267,101 +268,85 @@ def reduced_allocation_comment(
     reason: str,
     reports: AnalysisReports | None = None,
 ) -> str:
-    """The review a citizen gets when nothing interpreted their readings.
+    """The readings, and almost nothing else.
 
     PRD section 8 commits to graceful degradation: a student always receives
     *some* feedback. This is that floor, and it is a *visibly different*
     review rather than a quieter one wearing a footnote.
 
-    The readings here are as trustworthy as any other review's - they come
-    from tools, which cannot invent. What is missing is interpretation, and
-    the mode says so where a citizen will read it. If the lesson is "say when
-    you don't know", the saying has to be as visible as the knowing.
-    """
-    # Citizen Zero, on a first submission: "it says it compares to my last
-    # one, except this is called Submission 1, so I don't think there was a
-    # last submission to compare to." There was not - and saying otherwise
-    # taught a beginner to distrust the only sentence explaining the number.
-    first = result.is_first_submission or record.pr_count <= 1
-    if first:
-        scale_note = (
-            "Velocity is a rate of change, not a grade. This is your first "
-            "submission, so there is nothing to compare against yet - this number "
-            "is the baseline your next one moves from."
-        )
-    else:
-        scale_note = (
-            "Velocity is a rate of change, not a grade - it compares this "
-            "submission to your last one, so a high number means you moved, not "
-            "that you have arrived."
-        )
+    **Short on purpose, and much shorter than it was.** This used to run four
+    headed sections and ~235 words to say "no model answered, here are the
+    numbers" - long enough to read as a review, which is the one thing it is
+    not. Its own length was the lie: a citizen skimming it could not tell it
+    apart from a review that had been thought about. Length is how a reader
+    judges effort, so a mode that spent 235 words announcing that no effort was
+    made was arguing with itself.
 
+    Two things survive the cut, and both were paid for:
+
+    * **The disclaimer**, compressed to one clause. Without it the status reads
+      as a verdict on the submission rather than on the Algorithm.
+    * **One next step.** Citizen Zero, reading the old comment cold: "a review
+      that leaves you with nothing to do has failed." An empty ending is not
+      neutral, it is a dead end - and that is truer, not less true, in a
+      comment this short.
+
+    Gone: the velocity score, the rate-of-change explanation, and the
+    celebration list. A number nobody interpreted invites interpretation, and
+    the explanation existed only to defuse the number. Celebrations are the
+    part that most needs a reader; `calculate_velocity` writes them from
+    deltas alone, and three cheerful bullets under a banner saying nothing was
+    analysed is the tonal mismatch this mode exists to avoid.
+    """
     reports = reports or AnalysisReports()
-    coverage = _coverage_reading(reports, record, first)
-    tests = _test_reading(reports)
-    readings = "\n\n".join(line for line in (coverage, tests) if line)
-    celebrations = "\n".join(f"- {line}" for line in result.celebrations[:3])
-    # Citizen Zero, reading this cold: "a review that leaves you with nothing
-    # to do has failed." An empty section is not neutral - it is a dead end.
-    #
-    # The tally gets first refusal on the filler. `calculate_velocity` never
-    # sees a pass/fail count, so with the tallies newly wired this section
-    # printed "Nothing in these readings raised one" directly beneath a line
-    # reporting eleven tests in a pre-success state - two sections of one
-    # comment disagreeing about the same submission, which is `EARLY_RUNS.md`
-    # 9 exactly. Caught by rendering it and reading it, as that entry was.
+    first = result.is_first_submission or record.pr_count <= 1
+    lines = [
+        line
+        for line in (_coverage_reading(reports, record, first), _test_reading(reports))
+        if line
+    ]
+    # The score stays, in four words instead of thirty. Citizen Zero read a
+    # bare velocity number as a grade, and the old comment spent a 30-word
+    # paragraph explaining that it is a rate. The explanation was right and
+    # the length was the mode's whole problem, so the protection is kept and
+    # the paragraph is not.
+    facts_line = (
+        f"Submission {record.pr_count} - {result.iterations} commit(s), "
+        f"{facts['files_changed']} file(s). Velocity {result.score} (a rate, not a grade)."
+    )
+    readings_block = "\n\n".join([facts_line, *lines])
+
+    # The tally gets first refusal. `calculate_velocity` never sees a pass/fail
+    # count, so once the tallies were wired this line printed "Nothing in these
+    # readings raised one" directly beneath a line reporting eleven tests in a
+    # pre-success state - two parts of one comment disagreeing about the same
+    # submission, which is `EARLY_RUNS.md` 9 exactly. Caught by rendering it
+    # and reading it, as that entry was.
     if reports.tests_failed:
-        filler = (
-            "- Take the first test in a pre-success state and make it pass. "
-            "One is a smaller job than eleven, and the second is easier than the first."
+        next_step = (
+            "**Next:** take the first test in a pre-success state and make it pass. "
+            "One is a smaller job than eleven."
         )
+    elif result.opportunities:
+        next_step = f"**Next:** {result.opportunities[0]}"
     else:
-        filler = (
-            "- Nothing in these readings raised one. If you want a next step anyway: "
-            "run your tests locally before your next push, so you see a failure "
-            "before The Algorithm does."
+        next_step = (
+            "**Next:** run your tests locally before your next push, so you see a "
+            "pre-success state before The Algorithm does."
         )
-    opportunities = "\n".join(f"- {line}" for line in result.opportunities) or filler
 
     return f"""## \U0001f916 SHODANN Analysis Complete
 
 **Citizen**: @{facts["citizen"]} | \
 **Clearance**: {clearance_name(record.clearance_level)} | \
-**Status**: REDUCED ALLOCATION
+**Status**: MINIMAL RESPONSE
 
----
+Readings only, not interpreted ({reason}) - the Algorithm is running lean, \
+which is a fact about the Algorithm and not about your work.
 
-### ⚡ Resource Advisory
+{readings_block}
 
-The Algorithm reviewed this submission using minimal resources. You are welcome.
-
-**This status describes the Algorithm's allocation, not your work.** Nothing
-below is a mark against your submission - the Algorithm is the one running lean.
-
-Synthesis was unavailable this cycle ({reason}), so what follows is instrument
-readings only - measured, not interpreted. The numbers are sound. The judgement
-is yours. Please verify anything that matters.
-
-### \U0001f4ca Instrument Readings
-
-Submission {record.pr_count}. {result.iterations} commit(s), \
-{facts["files_changed"]} file(s) touched. Velocity score: {result.score}.
-
-{readings}
-
-{scale_note}
-
-### ✅ Algorithm-Approved Patterns
-
-{celebrations}
-
-### \U0001f4c8 Growth Opportunities
-
-{opportunities}
-
----
-
-*The Algorithm sees your growth. The Algorithm is operating within budget.*
+{next_step}
 """
 
 
@@ -381,37 +366,25 @@ def _safe_citizen(event_path: str) -> str:
 def emergency_comment(citizen: str) -> str:
     """What a citizen gets when the review itself could not be assembled.
 
-    No metrics, because whatever produced them is what failed. It still wears
-    the REDUCED ALLOCATION status, because that mode means exactly this: the
+    No metrics, because whatever produced them is what failed. It wears the
+    same MINIMAL RESPONSE status, because that mode means exactly this: the
     readings are absent and the Algorithm is saying so rather than going
     quiet. Silence is the one response a citizen cannot interpret.
+
+    Shortened alongside the mode it shares a status with, and for a sharper
+    version of the same reason. This ran four headed sections to report that
+    *nothing had been read at all* - the further a comment is from having
+    anything to say, the less it may spend saying it.
     """
     return f"""## \U0001f916 SHODANN Analysis Complete
 
-**Citizen**: @{citizen} | **Clearance**: PENDING | **Status**: REDUCED ALLOCATION
+**Citizen**: @{citizen} | **Clearance**: PENDING | **Status**: MINIMAL RESPONSE
 
----
+An internal fault stopped the analysis before it read anything, so there are \
+no readings this cycle. Nothing here reflects on your work, because nothing \
+here saw your work. The fault is logged for the instructor.
 
-### ⚡ Resource Advisory
-
-The Algorithm reviewed this submission using minimal resources. Extremely
-minimal. None, in fact - an internal fault prevented analysis entirely, and
-the Algorithm has elected to tell you so rather than leave you refreshing.
-
-Your submission is unaffected. Nothing here reflects on your work, because
-nothing here read your work. The fault is logged for the instructor.
-
-### \U0001f4ca Instrument Readings
-
-Unavailable this cycle.
-
-### \U0001f4c8 Growth Opportunities
-
-- Carry on. The Algorithm will resume observation once repaired.
-
----
-
-*The Algorithm sees your growth. The Algorithm is, briefly, not seeing anything.*
+**Next:** carry on. The Algorithm will resume observation once repaired.
 """
 
 
@@ -444,13 +417,13 @@ def _synthesise(
     if client is not None:
         transport["client"] = client
 
-    response = generate(prompt, config, **transport)
+    response = unwrap_fenced_response(generate(prompt, config, **transport))
     findings = _inspect(response, prompt, spec)
     if not blocks_posting(findings):
         return response
 
     retry = f"{prompt}\n\n{format_retry_instruction(findings)}"
-    second = generate(retry, config, **transport)
+    second = unwrap_fenced_response(generate(retry, config, **transport))
     final = _inspect(second, prompt, spec)
     if blocks_posting(final):
         _log_violations(findings, final)

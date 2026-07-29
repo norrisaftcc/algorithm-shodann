@@ -186,7 +186,7 @@ def test_two_bad_responses_fall_back_rather_than_posting_the_second(tmp_path) ->
     body = review(EVENT, root=tmp_path, config=CONFIG, opener=responder(bad, bad))
 
     assert "You should" not in body
-    assert "REDUCED ALLOCATION" in body
+    assert "MINIMAL RESPONSE" in body
 
 
 # --- degradation ----------------------------------------------------------
@@ -221,10 +221,9 @@ def test_the_degraded_comment_honours_its_own_contract(tmp_path) -> None:
 def test_the_advisory_makes_the_joke_and_the_caveat_the_same_sentence(tmp_path) -> None:
     body = review(EVENT, root=tmp_path, config=LLMConfig())
 
-    assert "using minimal resources. You are welcome." in body
-    assert "measured, not interpreted" in body
-    assert "verify anything that matters" in body
-    assert "operating within budget" in body
+    assert "not interpreted" in body, "the mode names its own limit"
+    assert "not about your work" in body, "and disclaims the citizen in the same breath"
+    assert "no model configured" in body, "and says which limit it hit"
 
 
 def test_the_degraded_review_never_interprets_while_claiming_not_to(tmp_path) -> None:
@@ -233,11 +232,11 @@ def test_the_degraded_review_never_interprets_while_claiming_not_to(tmp_path) ->
     interpretation?" It was. The readings section states counts only now.
     """
     body = review(EVENT, root=tmp_path, config=LLMConfig())
-    readings = body.split("Instrument Readings")[1].split("###")[0]
+    readings = readings_of(body)
 
     for interpretation in ("EXCEPTIONAL", "deeply pleased", "Refactoring phase", "OPTIMAL"):
         assert interpretation not in readings, f"{interpretation!r} is a judgement, not a reading"
-    assert "rate of change, not a grade" in body, "the number needs a scale to mean anything"
+    assert "a rate, not a grade" in body, "the number still needs a scale to mean anything"
 
 
 def test_a_first_submission_is_not_told_to_compare_with_its_predecessor(tmp_path) -> None:
@@ -248,9 +247,8 @@ def test_a_first_submission_is_not_told_to_compare_with_its_predecessor(tmp_path
     """
     body = review(EVENT, root=tmp_path, config=LLMConfig())
 
-    assert "this is your first submission" in body.lower()
     assert "compares this submission to your last one" not in body
-    assert "baseline your next one moves from" in body
+    assert "your last" not in body, "no comparison is offered at all now, so none can be wrong"
 
 
 def test_the_status_says_it_is_not_about_the_citizen(tmp_path) -> None:
@@ -259,7 +257,10 @@ def test_the_status_says_it_is_not_about_the_citizen(tmp_path) -> None:
     the header first.
     """
     body = review(EVENT, root=tmp_path, config=LLMConfig())
-    assert "describes the Algorithm's allocation, not your work" in body
+    assert "not about your work" in body
+    assert body.index("not about your work") < body.index("Velocity"), (
+        "the disclaimer has to arrive before the first number a citizen could take personally"
+    )
 
 
 def test_a_degraded_review_always_leaves_something_to_do(tmp_path) -> None:
@@ -267,10 +268,10 @@ def test_a_degraded_review_always_leaves_something_to_do(tmp_path) -> None:
     failed, and no amount of correct structure changes that.
     """
     body = review(EVENT, root=tmp_path, config=LLMConfig())
-    opportunities = body.split("Growth Opportunities")[1].split("---")[0]
+    next_step = body.split("**Next:**")[1].split("---")[0].strip()
 
-    assert opportunities.strip().startswith("-")
-    assert "no growth opportunities to raise" not in opportunities, "a dead end, not a section"
+    assert next_step, "an empty ending is a dead end, and more so in a comment this short"
+    assert not next_step.startswith("nothing"), "a dead end, not a next step"
 
 
 # --- coverage in the degraded readout -------------------------------------
@@ -305,7 +306,8 @@ def ledger(tmp_path, *, coverage: float, measured: bool) -> None:
 
 
 def readings_of(body: str) -> str:
-    return body.split("Instrument Readings")[1].split("###")[0]
+    """The instrument lines, between the disclaimer and the one next step."""
+    return body.split("not about your work.")[1].split("**Next:**")[0]
 
 
 def test_a_measured_coverage_figure_reaches_the_citizen(tmp_path) -> None:
@@ -436,11 +438,12 @@ def test_the_instrument_arriving_is_not_celebrated_as_the_citizen_improving(
         EVENT, root=tmp_path, config=LLMConfig(),
         reports_dir=instrumented(tmp_path, 98.6), write_state=False,
     )
-    patterns = body.split("Approved Patterns")[1].split("###")[0]
-
     assert "previous submission was not measured" in readings_of(body)
-    assert "jumped" not in patterns, "the readings deny the gain the celebration claims"
-    assert "First tests are hardest tests" not in patterns, (
+    # The celebration list is gone from this mode, so the contradiction it
+    # used to create cannot recur here. What must still hold is that no gain
+    # is claimed anywhere in the comment when only the instrument is new.
+    assert "jumped" not in body, "the readings deny the gain a celebration would claim"
+    assert "First tests are hardest tests" not in body, (
         "they may have had 98.6% all along; only the instrument is new"
     )
 
@@ -453,7 +456,12 @@ def test_a_measured_zero_to_thirty_still_scores_as_the_gain_it_is(tmp_path) -> N
         reports_dir=instrumented(tmp_path, 30.0), write_state=False,
     )
     assert "Up 30.0 from 0.0%" in readings_of(body)
-    assert "Coverage" in body.split("Approved Patterns")[1].split("###")[0]
+    # The celebration section this used to check is gone from the degraded
+    # mode. The gain still has to survive into the score, which is what
+    # US-1.3 is actually about - a first test must outweigh a later equal one.
+    assert float(body.split("Velocity ")[1].split(" ")[0]) > 0, (
+        "a measured 0 to 30 is the flagship gain and must not reconcile to nothing"
+    )
 
 
 def test_an_unmeasured_cycle_carries_the_last_real_figure_forward(tmp_path) -> None:
@@ -486,7 +494,7 @@ def test_a_band_outside_the_allocation_is_refused_not_attempted(tmp_path) -> Non
         opener=must_not_be_called, write_state=False,
     )
 
-    assert "REDUCED ALLOCATION" in body
+    assert "MINIMAL RESPONSE" in body
     assert "clearance 3 and below" in body
 
 
@@ -575,8 +583,8 @@ def test_a_broken_review_still_speaks(tmp_path, capsys) -> None:
     body = out.read_text(encoding="utf-8")
 
     assert code == EXIT_DEGRADED, "a citizen is served, and CI still turns red"
-    assert "REDUCED ALLOCATION" in body
-    assert "nothing here read your work" in body
+    assert "MINIMAL RESPONSE" in body
+    assert "nothing here saw your work" in body
     assert "Traceback" in capsys.readouterr().err, "the maintainer gets the cause"
 
 
@@ -663,7 +671,7 @@ def test_the_disclosure_rides_the_finished_comment(tmp_path) -> None:
     body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
 
     assert ".shodann/clearances.json" in body
-    assert body.index(".shodann/clearances.json") > body.index("Instrument Readings")
+    assert body.index(".shodann/clearances.json") > body.index("**Next:**")
 
 
 def test_a_red_citizen_is_not_handed_the_knob(tmp_path) -> None:
@@ -705,7 +713,7 @@ def test_an_unreachable_primary_reaches_the_fallback(tmp_path) -> None:
     )
 
     assert sdk.calls == 1, "the fallback was asked exactly once"
-    assert "REDUCED ALLOCATION" not in body, "a served review is not a degraded one"
+    assert "MINIMAL RESPONSE" not in body, "a served review is not a degraded one"
 
 
 def test_without_a_fallback_an_unreachable_primary_still_degrades(tmp_path) -> None:
@@ -713,7 +721,7 @@ def test_without_a_fallback_an_unreachable_primary_still_degrades(tmp_path) -> N
         EVENT, root=tmp_path, config=CONFIG, fallback=None,
         opener=_unreachable, write_state=False,
     )
-    assert "REDUCED ALLOCATION" in body
+    assert "MINIMAL RESPONSE" in body
 
 
 def test_a_contract_violation_does_not_spend_a_second_provider(tmp_path) -> None:
@@ -734,7 +742,7 @@ def test_a_contract_violation_does_not_spend_a_second_provider(tmp_path) -> None
     )
 
     assert sdk.calls == 0, "unreachability is the trigger, not a bad answer"
-    assert "REDUCED ALLOCATION" in body
+    assert "MINIMAL RESPONSE" in body
 
 
 def test_an_explicit_config_never_picks_up_a_key_from_the_environment(
@@ -749,7 +757,7 @@ def test_an_explicit_config_never_picks_up_a_key_from_the_environment(
 
     body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
 
-    assert "REDUCED ALLOCATION" in body, "no model configured, and none reached for"
+    assert "MINIMAL RESPONSE" in body, "no model configured, and none reached for"
 
 
 # --- the footer is inside the budget, not appended past it -----------------
@@ -760,9 +768,11 @@ def test_the_degraded_spec_leaves_room_for_the_disclosure() -> None:
 
     The degraded comment is SHODANN's own text at a fixed length, so unlike
     every other spec its budget cannot shrink to make room. Its cap must
-    therefore carry the review budget *plus* the reservation.
+    therefore carry the readings *plus* the reservation. The 115 is measured:
+    the longest real body this mode emits is a failing suite with every
+    sentence in its longest form.
     """
-    assert REDUCED_ALLOCATION.max_words >= 250 + DISCLOSURE_ALLOWANCE
+    assert REDUCED_ALLOCATION.max_words >= 115 + DISCLOSURE_ALLOWANCE
 
 
 @pytest.mark.parametrize("band", [1, 2, 3, 4, 5, 6])
@@ -1002,7 +1012,7 @@ def test_a_degraded_review_warns_rather_than_failing(tmp_path, capsys) -> None:
     warning = capsys.readouterr().err
     assert "::warning::" in warning, "a GitHub annotation, visible where the maintainer is"
     assert "no model configured" in warning, "and it names the reason"
-    assert "REDUCED ALLOCATION" in body, "the citizen still gets their review"
+    assert "MINIMAL RESPONSE" in body, "the citizen still gets their review"
 
 
 def test_a_healthy_review_announces_nothing(tmp_path, capsys) -> None:

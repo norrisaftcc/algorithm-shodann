@@ -212,7 +212,10 @@ Current Clearance: {{ CLEARANCE_NAME }}
 
 ## Required Response Structure
 
-Generate your response using EXACTLY this structure:
+Generate your response using EXACTLY this structure. The fence below marks
+where the example starts and stops — it is not part of the structure. Emit the
+markdown itself, starting with `## `, and do **not** wrap your reply in a code
+fence of any kind.
 
 ```markdown
 ## [ROBOT EMOJI] SHODANN Analysis Complete
