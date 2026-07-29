@@ -16,6 +16,7 @@ from shodann.velocity import (
     FIRST_TESTS_PHRASE,
     CodeMetrics,
     MetricDeltas,
+    _coverage_multiplier,
     calculate_velocity,
     composite_score,
 )
@@ -108,6 +109,90 @@ def test_the_retired_engine_really_did_score_them_the_same() -> None:
         metrics(coverage=80.0, **base), metrics(coverage=50.0, **base), 1, config=ORACLE_CONFIG
     )
     assert first.score == later.score == pytest.approx(60.50)
+
+
+def test_the_first_test_bonus_keeps_its_magnitude_not_just_its_sign() -> None:
+    """The direction of US-1.3 is cheap to satisfy. The strength is the promise.
+
+    `test_first_coverage_gain_outscores_an_equal_later_gain` above asserts only
+    `first.score > later.score`, and that ordering survives almost any positive
+    bonus: at `first_test_bonus = 0.05` the multipliers are 1.05 and 1.025, so
+    the comparison still passes while the pedagogy is gone. A surveyor moved
+    the constant 1.0 -> 0.05 and all 247 tests stayed green.
+
+    So pin the constant and the curve it produces. `first_test_bonus` is a
+    *score input*, and PRD section 8 freezes those for cohort 1: changing this
+    number after the first real submission invalidates every citizen's
+    baseline. A deliberate change means changing this test, which is the point.
+    """
+    assert DEFAULT_CONFIG.first_test_bonus == 1.0
+
+    # 1 + bonus * headroom, so a citizen at zero coverage earns double and a
+    # citizen at full coverage earns single. Nothing in between is special.
+    assert _coverage_multiplier(0.0, DEFAULT_CONFIG) == 2.0
+    assert _coverage_multiplier(50.0, DEFAULT_CONFIG) == 1.5
+    assert _coverage_multiplier(100.0, DEFAULT_CONFIG) == 1.0
+
+    # Out of range readings saturate rather than inverting the curve.
+    assert _coverage_multiplier(-10.0, DEFAULT_CONFIG) == 2.0
+    assert _coverage_multiplier(140.0, DEFAULT_CONFIG) == 1.0
+
+
+def test_the_bonus_is_worth_a_stated_number_of_points() -> None:
+    """The same coverage gain, from two bases, differing by a known amount.
+
+    Guards the magnitude end to end rather than in the multiplier alone: an
+    identical delta of 10 points scores `10 * 2.0 * (2.0 - 1.5)` = 10 higher
+    when it starts from zero. Under a flattened bonus of 0.05 the gap is 0.5.
+    """
+    base = dict(test_count=4, complexity=10, loc=200, functions=8, docstrings=3, lint_issues=2)
+    from_zero = calculate_velocity(
+        metrics(coverage=10.0, **base), metrics(coverage=0.0, **base), 1
+    )
+    from_fifty = calculate_velocity(
+        metrics(coverage=60.0, **base), metrics(coverage=50.0, **base), 1
+    )
+    assert from_zero.score - from_fifty.score == pytest.approx(10.0)
+
+
+# --- the growth term reads what it means ----------------------------------
+
+
+def test_the_growth_term_reads_functions_not_complexity() -> None:
+    """`complexity` now carries a C901 count, and this term must not read it.
+
+    A positive delta in a C901 count means the citizen added a function over
+    the branch threshold. Scored through `weights.complexity_growth` that
+    would pay them for it - a punitive signal inverted into a reward, which is
+    worse than the mislabel it replaced.
+
+    `functions` is what the term always meant: how much code you took on.
+    Until C901 was measured the two fields held the same `def ` count, so no
+    real citizen's score moves by any amount.
+    """
+    base = dict(coverage=50.0, test_count=4, loc=200, docstrings=3, lint_issues=2)
+    # Took on four more functions while cleaning every one over the threshold.
+    previous = metrics(complexity=6, functions=8, **base)
+    current = metrics(complexity=0, functions=12, **base)
+
+    result = calculate_velocity(current, previous, 1)
+
+    assert result.deltas.functions == 4
+    assert result.deltas.complexity == -6
+    # Credited for the four, and the guard keeps the -6 from ever subtracting.
+    assert result.score > calculate_velocity(previous, previous, 1).score
+
+
+def test_the_oracle_still_reads_complexity() -> None:
+    """The divergence is expressed as config, so the snapshot stays byte-exact.
+
+    `design_docs/growth-velocity.js` scored `complexity`, and the fixtures are
+    captured evidence from it - the only place the two fields ever differ. If
+    this flips, `tests/test_oracle_snapshot.py` fails for a reason that has
+    nothing to do with a transcription error, which is what it exists to find.
+    """
+    assert DEFAULT_CONFIG.complexity_growth_reads_functions is True
+    assert ORACLE_CONFIG.complexity_growth_reads_functions is False
 
 
 def test_first_test_emits_the_required_phrase() -> None:

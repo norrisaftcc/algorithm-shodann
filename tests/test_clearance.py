@@ -9,13 +9,15 @@ enforces, and these tests assert that for every band and every mode.
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 import pytest
 
-from shodann.clearance import clearance_instructions
+from shodann.clearance import clearance_disclosure, clearance_instructions
 from shodann.prompts import build_context, render_prompt
-from shodann.state import CitizenRecord
+from shodann.state import CitizenRecord, clearance_name, read_clearance
 from shodann.validator import SPECS, STANDARD, for_clearance
 from shodann.velocity import CodeMetrics, calculate_velocity
 
@@ -108,3 +110,99 @@ def test_blue_plus_is_not_assigned_homework() -> None:
 def test_an_out_of_range_band_still_renders() -> None:
     assert clearance_instructions(99).strip()
     assert clearance_instructions(0).strip()
+
+
+# --- the register is read, not inferred -----------------------------------
+
+
+def test_the_band_comes_from_the_file(tmp_path) -> None:
+    """The defect this closes: nothing ever read a clearance source.
+
+    `clearance_level` round-tripped the ledger and nothing else wrote it, so
+    every citizen was permanently RED and the INFRARED and BLUE+ branches were
+    built, tested, and unreachable.
+    """
+    (tmp_path / ".shodann").mkdir()
+    (tmp_path / ".shodann" / "clearances.json").write_text(
+        json.dumps({"octocat": "5", "hubot": 6}), encoding="utf-8"
+    )
+
+    assert read_clearance("octocat", tmp_path) == 5
+    assert read_clearance("hubot", tmp_path) == 6, "integers are accepted too"
+
+
+def test_unset_is_not_red_it_is_unset(tmp_path) -> None:
+    """`None` lets the caller decide. Collapsing it to 2 here hides the gap."""
+    assert read_clearance("octocat", tmp_path) is None, "no file at all"
+
+    (tmp_path / ".shodann").mkdir()
+    (tmp_path / ".shodann" / "clearances.json").write_text(
+        '{"someone-else": "4"}', encoding="utf-8"
+    )
+    assert read_clearance("octocat", tmp_path) is None, "file exists, citizen unlisted"
+
+
+@pytest.mark.parametrize(
+    "payload", ['{"octocat": "3",}', "not json at all", '["octocat"]', '{"octocat": "BLUE+"}']
+)
+def test_a_broken_register_never_costs_a_citizen_their_review(payload: str, tmp_path) -> None:
+    """A trailing comma in a config file must not raise on the review path."""
+    (tmp_path / ".shodann").mkdir()
+    (tmp_path / ".shodann" / "clearances.json").write_text(payload, encoding="utf-8")
+    assert read_clearance("octocat", tmp_path) is None
+
+
+def test_out_of_range_bands_saturate(tmp_path) -> None:
+    """A band of 9 is a typo, not grounds for refusing to review someone."""
+    (tmp_path / ".shodann").mkdir()
+    (tmp_path / ".shodann" / "clearances.json").write_text(
+        json.dumps({"high": "9", "low": "0", "negative": "-3"}), encoding="utf-8"
+    )
+    assert read_clearance("high", tmp_path) == 6
+    assert read_clearance("low", tmp_path) == 1
+    assert read_clearance("negative", tmp_path) == 1
+
+
+def test_the_shipped_register_parses_and_starts_everyone_at_red() -> None:
+    """Landmine 8: no example existed anywhere, though MVP needs one."""
+    shipped = Path(__file__).parent.parent / ".shodann" / "clearances.json"
+    table = json.loads(shipped.read_text(encoding="utf-8"))
+    assert table, "an empty register teaches nothing about the shape"
+    assert all(int(level) == 2 for level in table.values()), "everyone starts at RED"
+
+
+# --- the disclosure waits for ORANGE --------------------------------------
+
+
+@pytest.mark.parametrize("level", [1, 2])
+def test_below_orange_the_register_is_not_advertised(level: int) -> None:
+    assert clearance_disclosure(level) == ""
+
+
+@pytest.mark.parametrize("level", [3, 4, 5, 6])
+def test_from_orange_up_the_citizen_is_told_where_their_band_lives(level: int) -> None:
+    """Being told is the promotion, not being able to read the file."""
+    footer = clearance_disclosure(level)
+    assert ".shodann/clearances.json" in footer
+    assert clearance_name(level) in footer
+    assert "CLEARANCE_REGISTER" in footer, "point at the reasoning, not just the knob"
+
+
+def test_the_disclosure_keeps_the_voice() -> None:
+    """It is appended to a citizen-facing comment, so the vocabulary rules apply."""
+    footer = clearance_disclosure(6)
+    for forbidden in ("You should", "You need to", "Unfortunately", "wrong", "failed"):
+        assert forbidden not in footer
+
+
+def test_the_footer_stays_inside_its_reservation() -> None:
+    """The allowance is subtracted from the model's budget, so it must hold.
+
+    A footer that outgrows this silently puts every ORANGE-and-above comment
+    over the cap the output contract states.
+    """
+    from shodann.clearance import DISCLOSURE_ALLOWANCE
+
+    for level in (3, 4, 5, 6):
+        words = len(clearance_disclosure(level).split())
+        assert words <= DISCLOSURE_ALLOWANCE, f"band {level} footer is {words} words"

@@ -54,6 +54,8 @@ divergence in `growth-velocity.js` / `shodann-core.yml`, which is deliberate.
 | S1-18 | Ledger push is bare `git push` with no fetch/rebase/retry, and concurrency is keyed per PR — **two close merges race**, and the loser posts nothing and retries nothing. | `shodann.yml:247` | ledger | S |
 | S1-19 | `to_dict` emits a fixed key list and `from_dict` discards unknowns, with no `schema_version` — cross-repo schema drift becomes invisible data loss. | `state.py:140` | ledger | S |
 | S1-20 | `rage_state_encounters` is written to every record, never incremented, never read. Reads as a real counter saying RAGE never fired. | `state.py:93` | ledger | S |
+| S1-38 | **A stacked pull request writes the ledger twice.** The merge path fires on any merged PR, including one merged into another feature branch that never reaches `main`. Observed 2026-07-28: #58 merged into #56's branch and SHODANN recorded a cycle, taking `pr_count` and `iteration_streak` to 16 for work that landed once. Compounds S1-16. Either gate the write on `base.ref == main` or accept stacking as double-counted and stop stacking. | `shodann.yml`, closed-event job | ledger | S |
+| S1-39 | `complexity` changed units on 2026-07-29 — a `def ` count before, a `C901` count after (S1-03). The live record now reads `complexity: 0, functions: 361` against a stored history of `def` counts, so any delta spanning that boundary compares two different quantities. Nothing punitive follows, because the score no longer reads the field, but a reader of the history cannot see where the unit changed. | `norrisaftcc.json`, `velocity_history` | ledger | S |
 
 ## Test suite gaps
 

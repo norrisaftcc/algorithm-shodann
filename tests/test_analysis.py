@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import json
 
-from shodann.analysis import AnalysisReports, read_coverage, read_lint_issues
+from shodann.analysis import (
+    AnalysisReports,
+    read_complexity,
+    read_coverage,
+    read_lint_issues,
+)
 from shodann.review import collect_metrics
 
 
@@ -106,3 +111,60 @@ def test_a_coverage_gain_now_moves_the_velocity_score(tmp_path) -> None:
 
     assert calculate_velocity(current, previous, 1).score > 0
     assert calculate_velocity(current, previous, 1).deltas.coverage == 25.0
+
+
+# --- complexity, the metric the pin was protecting but nobody computed -----
+
+
+def diagnostic(code: str) -> dict:
+    """One ruff diagnostic, trimmed to the fields anything here reads."""
+    return {"code": code, "message": f"{code} happened", "filename": "x.py"}
+
+
+def test_complexity_counts_only_the_branch_rule(tmp_path) -> None:
+    path = write(
+        tmp_path / "ruff.json",
+        [diagnostic("C901"), diagnostic("E501"), diagnostic("C901"), diagnostic("F401")],
+    )
+    assert read_complexity(path) == 2
+    assert read_lint_issues(path) == 4, "the lint term still counts every diagnostic"
+
+
+def test_a_clean_report_is_a_measured_zero(tmp_path) -> None:
+    """No function over the threshold is the answer, not the absence of one."""
+    path = write(tmp_path / "ruff.json", [])
+    assert read_complexity(path) == 0
+
+
+def test_an_absent_report_is_not_a_clean_codebase(tmp_path) -> None:
+    assert read_complexity(tmp_path / "nope.json") is None
+    assert AnalysisReports.from_directory(tmp_path).complexity is None
+
+
+def test_a_truncated_lint_report_degrades_rather_than_raising(tmp_path) -> None:
+    path = tmp_path / "ruff.json"
+    path.write_text('[{"code": "C90', encoding="utf-8")
+    assert read_complexity(path) is None
+
+
+def test_the_wrapped_diagnostics_shape_is_read_too(tmp_path) -> None:
+    """Some ruff versions wrap the list in an object; read_lint_issues handles both."""
+    path = write(tmp_path / "ruff.json", {"diagnostics": [diagnostic("C901")]})
+    assert read_complexity(path) == 1
+    assert read_lint_issues(path) == 1
+
+
+def test_complexity_reaches_the_metrics_from_the_report(tmp_path) -> None:
+    """It used to be a count of `def `, which is what `functions` already was."""
+    (tmp_path / "thing.py").write_text(
+        "def one():\n    return 1\n\n\ndef two():\n    return 2\n", encoding="utf-8"
+    )
+    write(tmp_path / "ruff.json", [diagnostic("C901"), diagnostic("E501")])
+
+    metrics = collect_metrics(tmp_path, AnalysisReports.from_directory(tmp_path))
+
+    assert metrics.complexity == 1, "one function over the branch threshold"
+    assert metrics.functions == 2, "two functions defined"
+    assert metrics.complexity != metrics.functions, (
+        "these were the same number for as long as nothing measured C901"
+    )

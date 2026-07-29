@@ -208,7 +208,13 @@ CONFIG_ONLY = ResponseSpec(
 
 REDUCED_ALLOCATION = ResponseSpec(
     name="reduced_allocation",
-    max_words=250,
+    # 250 of review plus the clearance disclosure's reserved 30. Unlike every
+    # other spec, this text is SHODANN's own and a fixed length - it sits at
+    # ~235 words, so reserving the footer out of 250 would put the comment
+    # over its own cap the moment a citizen reaches ORANGE. The budget for the
+    # review itself is unchanged; this states the addition rather than hiding
+    # it by appending after the check.
+    max_words=280,
     headings=(
         "Resource Advisory",
         "Instrument Readings",

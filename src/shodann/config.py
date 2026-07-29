@@ -76,6 +76,24 @@ class VelocityConfig:
     Growing complexity without tests is a smaller credit, never a penalty.
     """
 
+    complexity_growth_reads_functions: bool = True
+    """Take the growth term from ``functions`` rather than ``complexity``.
+
+    A deliberate divergence from the oracle, expressed here rather than in the
+    engine so ``ORACLE_CONFIG`` still reproduces the retired JavaScript exactly
+    - the same mechanism ``first_test_bonus`` uses.
+
+    The oracle read ``complexity``. In production the two fields have always
+    held the same number, a count of ``def ``, because ``collect_metrics`` set
+    them from one variable. Now that ``complexity`` carries a real C901
+    reading, the term has to say which of the two it always meant: "how much
+    code did you take on", which is ``functions``. Pointing it at C901 instead
+    would credit a citizen for adding a function over the branch threshold.
+
+    Only the synthetic oracle fixtures ever set the two fields apart, so
+    flipping this changes no real citizen's score by any amount.
+    """
+
     max_opportunities: int = 2
     """Hard cap from the output contract. The engine truncates; job 4 must not have to."""
 
@@ -84,5 +102,8 @@ class VelocityConfig:
 
 DEFAULT_CONFIG = VelocityConfig()
 
-ORACLE_CONFIG = VelocityConfig(first_test_bonus=0.0)
+ORACLE_CONFIG = VelocityConfig(
+    first_test_bonus=0.0,
+    complexity_growth_reads_functions=False,
+)
 """Reproduces design_docs/growth-velocity.js. Test-only - never ship this."""

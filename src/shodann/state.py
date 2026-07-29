@@ -25,14 +25,46 @@ from .velocity import CodeMetrics, VelocityResult
 
 __all__ = [
     "CITIZENS_DIR",
+    "CLEARANCES_FILE",
+    "DEFAULT_CLEARANCE",
     "CitizenRecord",
     "Display",
     "citizen_path",
     "load_citizen_history",
+    "read_clearance",
     "save_citizen_history",
 ]
+# Still omits seven names that four modules import, including `clearance_name`
+# - S1-26 in the sprint backlog. Left alone rather than fixed in passing.
 
 CITIZENS_DIR = Path(".shodann/citizens")
+
+CLEARANCES_FILE = Path(".shodann/clearances.json")
+"""Where a citizen's band is set, in their own repository.
+
+The ledger stores `clearance_level` and always has, but nothing ever wrote it
+to anything but its default - so every citizen was permanently RED and the
+INFRARED and BLUE+ branches were built, tested, and unreachable. This file is
+the missing source.
+
+It is deliberately the instructor's to set, not SHODANN's to infer. A band
+inferred from readings is a second score, and the whole product rests on
+improvement outranking position; `prompts/03`'s `INFER_CLEARANCE` sketch is
+declined for that reason and not merely unimplemented.
+
+It lives in the citizen's repository rather than a central store, for the same
+reason the ledger does: local truth, and a student can read the file that
+governs how they are spoken to.
+"""
+
+DEFAULT_CLEARANCE = 2
+"""RED. Everyone starts here.
+
+INFRARED is an onboarding state rather than a tracked one - a citizen without
+a GitHub account has no record to hold a band. It stays in the ladder because
+the register defines it and the renderer must not fail on it, not because a
+citizen is expected to sit there.
+"""
 
 TREND_NEW = "new"
 TREND_ASCENDING = "ascending"
@@ -166,6 +198,35 @@ def citizen_path(citizen: str, root: Path | str = ".") -> Path:
     the workflow happened to be standing in.
     """
     return Path(root) / CITIZENS_DIR / f"{citizen}.json"
+
+
+def read_clearance(citizen: str, root: Path | str = ".") -> int | None:
+    """The band set for this citizen, or ``None`` if nothing sets one.
+
+    A flat ``{"username": "3"}`` map. Values are strings because
+    `shodann-core.yml:98` wrote them that way and an instructor editing this
+    file by hand should not have to know which; ints are accepted too.
+
+    ``None`` means *unset*, which is not the same as RED. The caller decides
+    what an unset band means, and every failure here is an unset band rather
+    than an exception: a citizen must never lose their review because someone
+    left a trailing comma in a config file.
+    """
+    path = Path(root) / CLEARANCES_FILE
+    try:
+        with path.open(encoding="utf-8") as handle:
+            table = json.load(handle)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(table, dict):
+        return None
+    try:
+        level = int(table[citizen])
+    except (KeyError, TypeError, ValueError):
+        return None
+    # Saturate rather than reject. A band of 9 is a typo, not grounds for
+    # refusing to review someone's work.
+    return max(1, min(level, 6))
 
 
 def load_citizen_history(citizen: str, root: Path | str = ".") -> CitizenRecord:
