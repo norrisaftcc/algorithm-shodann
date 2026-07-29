@@ -179,8 +179,10 @@ def test_uninstrumented_coverage_says_so_rather_than_reporting_zero() -> None:
     assert "Coverage was not measured this cycle." in rendered
     assert "Do not report, infer, or celebrate" in rendered
 
-    # The complexity row must survive the branch it shares a table with.
-    assert "**Complexity**" in rendered
+    # The complexity row must survive the branch it shares a table with. Named
+    # by its unit since a model read a bare "0" as "not measured" - see
+    # test_a_measured_zero_is_not_reported_as_an_absent_reading.
+    assert "**Functions over the branch threshold**" in rendered
 
     # The prime directive's "0% to 30%" is illustrative prose, not a reading,
     # and must survive untouched.
@@ -428,11 +430,11 @@ def test_the_streak_is_labelled_with_the_unit_it_actually_counts() -> None:
     """
     rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
 
-    assert "consecutive submissions recorded" in rendered
     assert "Iteration Streak** | 2 commits" not in rendered
     assert "positive velocity" not in rendered, (
         "S1-23: the streak counts every submission, including one that scored below zero"
     )
+    assert "whatever each scored" in rendered, "the sign-independence has to survive"
 
 
 def test_the_two_submission_counters_do_not_contradict_each_other() -> None:
@@ -457,4 +459,43 @@ def test_the_two_submission_counters_do_not_contradict_each_other() -> None:
         "a post-increment count is not a count of previous submissions"
     )
     assert "Submission Number" in rendered
-    assert "recorded *before* this one" in rendered, "the streak has to say it is prior"
+    assert not re.search(r"Iteration Streak\*\* \| \d", rendered), (
+        "the streak row must carry no number of its own - see the docstring"
+    )
+    assert "not a second figure to report" in rendered
+
+
+def test_a_measured_zero_is_not_reported_as_an_absent_reading() -> None:
+    """The absent-vs-zero rule, running in the other direction.
+
+    Every guard for this so far has protected against an *absent* reading being
+    reported as a zero. SHODANN's fourth review of PR #61 did the reverse, and
+    nothing was watching that side:
+
+        "Zero complexity metrics recorded. As scope expands, the next level
+        involves understanding *where* complexity lives"
+
+    The reading was 0 and it was measured - a ruff `C901` count of zero means no
+    function exceeded the branch threshold, which is a good result and the best
+    available one. The citizen was told their complexity had not been captured
+    and sent to go and find it.
+
+    The row was labelled `**Complexity**` and carried a bare integer, and the
+    unit had changed under it in #58 from a count of `def ` to a count of
+    threshold violations. "Complexity: 0" invites exactly one reading from
+    anything that has not been told the unit. The row now names what it counts,
+    and the prompt states that a visible number is never a missing one - a
+    reading that was not taken has no row at all, which is the mechanism the
+    coverage, syntax, tests and style branches already use.
+    """
+    context = sample_context(
+        AnalysisReports(
+            coverage=97.6, lint_issues=20, complexity=0, syntax_errors=0,
+            tests_passed=419, tests_failed=0,
+        )
+    )
+    rendered = render_prompt(context, prompts_dir=PROMPTS)
+
+    assert "**Functions over the branch threshold**" in rendered, "a bare 'Complexity' has no unit"
+    assert "is a measurement and a good one" in rendered
+    assert "never describe a number you can see as missing" in rendered

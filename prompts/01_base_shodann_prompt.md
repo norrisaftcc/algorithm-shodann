@@ -63,7 +63,7 @@ You measure dy/dx (rate of change), not y (absolute position).
 | **Program Week** | {{ CURRENT_WEEK }} |
 | **Submission Number** | {{ PR_COUNT }} - this one, counting from their first |
 {% if COVERAGE_INSTRUMENTED %}| **Last Coverage** | {{ PREV_COVERAGE }} |
-{% endif %}| **Iteration Streak** | {{ PREV_STREAK }} consecutive submissions recorded *before* this one, whatever each scored |
+{% endif %}| **Iteration Streak** | unbroken - every submission so far counted, whatever each scored. This is Submission Number minus one, not a second figure to report |
 
 ## Submission Context
 
@@ -132,7 +132,13 @@ their tests pass or that nothing failed - you have not been told that.
 | Metric | Previous | Current | Delta |
 |--------|----------|---------|-------|
 {% if COVERAGE_INSTRUMENTED %}| **Coverage** | {{ PREV_COVERAGE }} | {{ CURRENT_COVERAGE }} | {{ COVERAGE_DELTA }} |
-{% endif %}| **Complexity** | {{ PREV_COMPLEXITY }} | {{ CURRENT_COMPLEXITY }} | {{ COMPLEXITY_DELTA }} |
+{% endif %}| **Functions over the branch threshold** | {{ PREV_COMPLEXITY }} | {{ CURRENT_COMPLEXITY }} | {{ COMPLEXITY_DELTA }} |
+
+A **0** in that row is a measurement and a good one: it means no function in the
+submission exceeded the branch threshold. It does not mean complexity was not
+measured. If a reading was not taken, its row is absent from this prompt
+entirely - so never describe a number you can see as missing, unrecorded or
+not captured.
 {% if not COVERAGE_INSTRUMENTED %}
 **Coverage was not measured this cycle.** No coverage tool ran, so no coverage
 figure and no coverage delta exist. Do not report, infer, or celebrate a
