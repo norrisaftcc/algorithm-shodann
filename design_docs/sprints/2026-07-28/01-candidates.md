@@ -15,6 +15,35 @@ divergence in `growth-velocity.js` / `shodann-core.yml`, which is deliberate.
 
 ---
 
+## Closure — read this before picking anything below
+
+The tables are left exactly as surveyed. **They carry no status, and a reader
+who trusts them will re-do finished work** — the retro found this the hard way,
+having written "33 other surveyed items" on a list that a dozen commits had
+already shortened. Closure is tracked here instead, in one place, so the survey
+stays the artifact it is and the question "is this done?" has one answer.
+
+| Closed | Where |
+|---|---|
+| S1-01, S1-02 | sprint commit `8c5e0e4` |
+| S1-25, S1-40 | #56 — the platform gate and the report-file deletion |
+| S1-03, S1-04, S1-05, S1-37 | #58 — the measurement fixes, before the freeze |
+| S1-09, S1-41 | #59 — the clearance register, the budgeted footer |
+| S1-06, S1-07, S1-08 | #60 — the tallies reach the DATA layer |
+| S1-15, S1-18, S1-19, S1-21, S1-22, S1-23, S1-38 | the ledger rung |
+| S1-16, S1-17, S1-39 | the ledger rung — **annotated, not corrected**; the figures stand and `discontinuities` records where the seams are |
+| S1-30 | superseded by #56's platform matrix |
+
+**Declined by decision**, not left open: S1-09a (INFRARED as the default band).
+#59 decided everyone starts at RED, and the reasoning is in that commit.
+
+Everything else is open. **S1-42, S1-43 and S1-44 were filed by the ledger rung
+itself** and are new since the survey — two of them found by adversarially
+reverting that rung's own guards, one by grepping the prompt for a claim after
+changing what the claim described.
+
+---
+
 ## Measurement integrity — the score itself is wrong or gameable
 
 | ID | Item | Where | Tag | Effort |
@@ -58,6 +87,9 @@ divergence in `growth-velocity.js` / `shodann-core.yml`, which is deliberate.
 | S1-38 | **A stacked pull request writes the ledger twice.** The merge path fires on any merged PR, including one merged into another feature branch that never reaches `main`. Observed 2026-07-28: #58 merged into #56's branch and SHODANN recorded a cycle, taking `pr_count` and `iteration_streak` to 16 for work that landed once. Compounds S1-16. Either gate the write on `base.ref == main` or accept stacking as double-counted and stop stacking. | `shodann.yml`, closed-event job | ledger | S |
 | S1-39 | `complexity` changed units on 2026-07-29 — a `def ` count before, a `C901` count after (S1-03). The live record now reads `complexity: 0, functions: 361` against a stored history of `def` counts, so any delta spanning that boundary compares two different quantities. Nothing punitive follows, because the score no longer reads the field, but a reader of the history cannot see where the unit changed. | `norrisaftcc.json`, `velocity_history` | ledger | S |
 | S1-41 | **The degraded comment breaks its own cap at BLUE+.** `for_clearance` clamps the band to `min(spec.max_words, 250)`, `review()` then reserves 30 words for the disclosure footer, and the REDUCED ALLOCATION body is SHODANN's own fixed ~235-word text with nothing to shorten. `test_the_posted_comment_respects_its_cap_at_every_band` parametrises all six bands and still misses it, because it validates against the *unadjusted* spec rather than `for_clearance(REDUCED_ALLOCATION, band)`. Found while scoping the author's promotion, which is why that promotion stopped at ORANGE. Fix: exempt a fixed text from a clamp that exists to stop the *model* padding. | `validator.py:278`, `test_review.py:768` | hygiene | S |
+| S1-42 | **`iteration_streak` is now an exact alias of `pr_count`.** S1-23 made the increment unconditional, and `save_citizen_history` holds the only two writes to either counter — both `+= 1`, in the same function, with no reset anywhere in `src/`. They start equal at 0 and can never diverge, so the ledger stores one number twice under two names, one of which the prompt calls a *streak*. Either the field earns a break condition that is not velocity sign (a gap in time, an unmerged close) or it is redundant and the honest move is to say so. Removing it is a schema change; deciding what it means is not. | `state.py`, `prompts/01:66` | ledger | M |
+| S1-43 | **A citizen is never told their history was lost.** `CitizenRecord.unreadable_source` is set on load and read by exactly one caller — the quarantine branch of the writer. Nothing reports it. A citizen whose ledger became a git conflict marker is quarantined correctly and then told "Submission 1" and "this is your first measured reading", and neither they nor the instructor hears that a record existed. The quarantine (S1-15) makes the bytes recoverable; nothing makes the loss *visible*. Needs a channel this rung did not build. | `state.py`, `review.py` | ledger | M |
+| S1-44 | **The seam annotation has no consumer.** `discontinuities` (S1-16/17/39) round-trips through serialisation and is legible in the JSON, which is all its docstring claims. But the numbers it annotates are published to humans in two places that never read it — the degraded comment's `Submission {pr_count}` and the leaderboard's Submissions column. The annotation protects a reader of the file; the figure leaks to everyone else unqualified. Deliberate scope for the ledger rung, filed so the next reader does not mistake it for an oversight. | `leaderboard.py`, `review.py` | ledger | M |
 
 ## Test suite gaps
 

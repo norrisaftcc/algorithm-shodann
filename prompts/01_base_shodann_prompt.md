@@ -63,7 +63,7 @@ You measure dy/dx (rate of change), not y (absolute position).
 | **Program Week** | {{ CURRENT_WEEK }} |
 | **Previous Submissions** | {{ PR_COUNT }} PRs |
 {% if COVERAGE_INSTRUMENTED %}| **Last Coverage** | {{ PREV_COVERAGE }} |
-{% endif %}| **Iteration Streak** | {{ PREV_STREAK }} consecutive submissions with positive velocity |
+{% endif %}| **Iteration Streak** | {{ PREV_STREAK }} consecutive submissions recorded, whatever each one scored |
 
 ## Submission Context
 

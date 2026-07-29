@@ -378,17 +378,29 @@ def test_the_prompt_forbids_connecting_two_instruments() -> None:
 def test_the_streak_is_labelled_with_the_unit_it_actually_counts() -> None:
     """SHODANN said "your iteration streak of 18 commits" and was quoting us.
 
-    `save_citizen_history` increments `iteration_streak` once per submission
-    that scored above zero - consecutive *submissions*, never commits. The
-    prompt labelled it "commits", the model repeated the label faithfully, and
-    the citizen was told a number about their commit history that was really
-    about their submission history.
+    `save_citizen_history` increments `iteration_streak` once per recorded
+    submission - consecutive *submissions*, never commits. The prompt labelled
+    it "commits", the model repeated the label faithfully, and the citizen was
+    told a number about their commit history that was really about their
+    submission history.
 
     Worth its own test because of how nearly it was filed against the model.
     A mislabelled figure looks identical to a fabricated one from the outside,
     and the difference is entirely in whose text the label came from.
+
+    The label broke a second time, in the other half of the phrase, and by the
+    same mechanism. S1-23 made the increment unconditional - a refactoring PR
+    scoring below zero extends the streak, because no branch of this engine is
+    punitive - while the template still read "with positive velocity". This
+    test asserted that string and passed, so the suite was pinning the stale
+    wording in place: the fix for EARLY_RUNS 16 recreated EARLY_RUNS 16. Both
+    directions are asserted now, because a label is only checkable against the
+    rule it claims to describe.
     """
     rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
 
-    assert "consecutive submissions with positive velocity" in rendered
+    assert "consecutive submissions recorded" in rendered
     assert "Iteration Streak** | 2 commits" not in rendered
+    assert "positive velocity" not in rendered, (
+        "S1-23: the streak counts every submission, including one that scored below zero"
+    )
