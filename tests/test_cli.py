@@ -68,6 +68,74 @@ def test_state_accumulates_across_runs(tmp_path) -> None:
     assert record["pr_count"] == 3
 
 
+def read_ledger(tmp_path, citizen: str = "octocat") -> dict:
+    """The stored ledger as a dict.
+
+    Callers assert on the one key they are about, never on the whole document:
+    `CitizenRecord` gains fields (`schema_version`, `discontinuities`) and a
+    whole-dict comparison here would fail on someone else's addition rather
+    than on the behaviour under test.
+    """
+    with citizen_path(citizen, tmp_path).open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def test_a_measured_coverage_figure_is_stored_as_measured(tmp_path) -> None:
+    """S1-21. The CLI wrote `coverage_instrumented: false` beside a real reading.
+
+    `save_citizen_history`'s keyword-only `coverage_instrumented` defaults to
+    False and `main` never passed it, so one manual run against a genuine
+    `coverage.json`-derived metrics file stored *unmeasured* next to a measured
+    figure. Nothing in this run's output is wrong, which is why it survived -
+    the damage lands in the next run, where `review.reconcile_coverage` reads
+    the stored flag to decide whether a coverage delta may be claimed at all.
+    """
+    main(["-c", "octocat", "--current", write_metrics(tmp_path), "--root", str(tmp_path)])
+    assert read_ledger(tmp_path)["coverage_instrumented"] is True
+
+
+def test_a_metrics_file_with_no_coverage_key_is_not_claimed_as_measured(tmp_path) -> None:
+    """The other direction of the same rule: absent is not zero, and not measured.
+
+    Guards against over-correcting S1-21 into an unconditional True, which
+    would be the identical defect pointing the other way - `from_dict` invents
+    0.0 for a missing key, and calling that a reading credits a citizen with a
+    measurement nobody took.
+    """
+    payload = {key: value for key, value in METRICS.items() if key != "coverage"}
+    path = tmp_path / "no-coverage.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    main(["-c", "octocat", "--current", str(path), "--root", str(tmp_path)])
+    assert read_ledger(tmp_path)["coverage_instrumented"] is False
+
+
+def test_a_stated_zero_is_a_measurement(tmp_path) -> None:
+    """0 to 30 is US-1.3's flagship case, so a written zero must not read as a gap."""
+    main(["-c", "octocat", "--current", write_metrics(tmp_path, coverage=0.0),
+          "--root", str(tmp_path)])
+    assert read_ledger(tmp_path)["coverage_instrumented"] is True
+
+
+def test_the_operator_may_overrule_the_inference_in_both_directions(tmp_path) -> None:
+    """The inference is defeasible, and saying so beats defaulting to a lie.
+
+    A hand-written fixture carrying a boilerplate coverage figure nobody
+    measured is the case the file cannot express, so the flag exists; the
+    tri-state default (`None`, not False) is what keeps "you did not say" from
+    collapsing into "it was not measured".
+    """
+    main(["-c", "denied", "--current", write_metrics(tmp_path), "--root", str(tmp_path),
+          "--no-coverage-instrumented"])
+    assert read_ledger(tmp_path, "denied")["coverage_instrumented"] is False
+
+    bare = tmp_path / "bare.json"
+    bare.write_text(json.dumps({"test_count": 4}), encoding="utf-8")
+    main(["-c", "asserted", "--current", str(bare), "--root", str(tmp_path),
+          "--coverage-instrumented"])
+    assert read_ledger(tmp_path, "asserted")["coverage_instrumented"] is True
+
+
 def test_emoji_output_survives_a_non_utf8_console(tmp_path) -> None:
     """Regression: the CLI used to die on Windows before printing a single line.
 

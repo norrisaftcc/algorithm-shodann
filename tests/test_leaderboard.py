@@ -146,3 +146,42 @@ def test_unreadable_ledger_is_skipped_not_fatal(tmp_path) -> None:
 
     assert len(load_all_citizens(tmp_path)) == 1
     assert "@good" in generate_leaderboard(tmp_path)
+
+
+def test_one_undecodable_byte_does_not_empty_the_whole_board(tmp_path) -> None:
+    """S1-22. `UnicodeDecodeError` was not caught, so one bad byte cost everyone.
+
+    The previous test passes with the old except clause: `json.JSONDecodeError`
+    covers a file whose *contents* are malformed. This one is about a file that
+    cannot become text at all - a latin-1 byte from an editor with the wrong
+    default, which is a plausible thing to find in a student's repository. That
+    raised out of the `for` loop, discarding `records` entirely, so the board
+    lost every citizen because of one file belonging to one of them.
+    """
+    write_record(tmp_path, "alpha", 5.0)
+    write_record(tmp_path, "zeta", 7.0)
+    mojibake = citizen_path("mojibake", tmp_path)
+    # Valid JSON in latin-1; the 0xE9 is `é`, which is not valid UTF-8 alone.
+    mojibake.write_bytes(b'{"citizen": "mojibake", "display": {"handle": "Caf\xe9"}}')
+
+    assert sorted(record.citizen for record in load_all_citizens(tmp_path)) == ["alpha", "zeta"]
+    document = generate_leaderboard(tmp_path)
+    assert "@alpha" in document
+    assert "@zeta" in document
+
+
+def test_a_ledger_that_cannot_be_opened_does_not_empty_the_board(tmp_path) -> None:
+    """The `OSError` half of S1-22, and the half a permissions test cannot check.
+
+    A ledger truncated mid-write, on a mount that went away, or left unopenable
+    by a permissions mishap all arrive as `OSError`. A directory standing where
+    a `*.json` file is expected reproduces that on every platform this suite
+    gates on - `IsADirectoryError` on Linux, `PermissionError` on Windows, both
+    `OSError` - whereas `chmod` is a no-op on Windows and would make this guard
+    silently vacuous there.
+    """
+    write_record(tmp_path, "alpha", 5.0)
+    (citizen_path("alpha", tmp_path).parent / "ghost.json").mkdir()
+
+    assert [record.citizen for record in load_all_citizens(tmp_path)] == ["alpha"]
+    assert "@alpha" in generate_leaderboard(tmp_path)

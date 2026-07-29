@@ -59,7 +59,43 @@ PHILOSOPHY = (
 
 
 def load_all_citizens(root: Path | str = ".") -> list[CitizenRecord]:
-    """Read every citizen ledger beneath ``root``, skipping unreadable files."""
+    """Read every citizen ledger beneath ``root``, skipping unreadable files.
+
+    S1-22: the docstring above already promised that, and the code contradicted
+    it. The caught set was ``(json.JSONDecodeError, KeyError, TypeError)``,
+    which covers a file whose *contents* are wrong and nothing at all about a
+    file that cannot be turned into text in the first place. One latin-1 byte
+    in one citizen's ledger raised `UnicodeDecodeError` straight out of the
+    loop, and a ledger truncated mid-write, sitting on a dead network mount, or
+    left unreadable by a permissions mishap raised `OSError` the same way -
+    taking every *other* citizen off the board with it, because ``records`` is
+    a local that never returns. The blast radius is the whole cohort and the
+    cause is one student's file.
+
+    The caught set now matches `state.read_clearance` and
+    `state.load_citizen_history` rather than inventing a second policy: those
+    two settled that a citizen must not lose their standing to someone else's
+    malformed file, and this is the same judgement applied to a directory
+    instead of a single path. `FileNotFoundError` needs no special case here,
+    unlike in `load_citizen_history` - a path that came out of `glob` and
+    vanished before the open is a race, not a new citizen, and skipping it is
+    the correct answer.
+
+    Skipping is silent because this function has no channel to speak on and no
+    reader to speak to. The file itself is preserved by `save_citizen_history`
+    rather than here, so nothing is destroyed by the omission.
+
+    What is *not* true, and was claimed here in the commit that widened this
+    clause: that a citizen's own review surfaces their unreadable ledger.
+    `CitizenRecord.unreadable_source` is set on load and read by exactly one
+    caller, the quarantine branch of the writer. Nothing reports it. A citizen
+    whose ledger became a conflict marker is told "Submission 1" and "this is
+    your first measured reading", their history is quarantined, and neither
+    they nor the instructor is told any of it happened. That is the shape of
+    S1-22 itself - a docstring promising what the code does not do - and
+    writing it into the commit that fixed S1-22 is worth more than a silent
+    correction. Surfacing it needs a channel this rung did not build.
+    """
     directory = Path(root) / CITIZENS_DIR
     if not directory.is_dir():
         return []
@@ -69,7 +105,7 @@ def load_all_citizens(root: Path | str = ".") -> list[CitizenRecord]:
         try:
             with path.open(encoding="utf-8") as handle:
                 records.append(CitizenRecord.from_dict(json.load(handle)))
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError):
             continue
     return records
 
