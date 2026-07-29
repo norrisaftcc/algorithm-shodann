@@ -36,6 +36,7 @@ __all__ = [
     "check_groundedness",
     "clearance_promised_as_earned",
     "constructs_claimed_in_data_files",
+    "commands_promised_to_clear_the_reading",
     "coverage_kinds_never_measured",
     "ungrounded_attribution",
     "ungrounded_percentages",
@@ -211,6 +212,7 @@ def check_groundedness(
         + _construct_findings(response)
         + _clearance_findings(response)
         + _coverage_kind_findings(response, prompt)
+        + _command_promise_findings(response)
     )
     invented = ungrounded_tokens(response, prompt)
     if not invented:
@@ -527,6 +529,75 @@ def _coverage_kind_findings(response: str, prompt: str) -> list[Violation]:
             "coverage measured is line coverage, and the word 'branch' in this "
             "prompt belongs to a count of functions. Say line coverage or say "
             "nothing about coverage.",
+            quoted,
+        )
+    ]
+
+
+_AUTOFIX = re.compile(r"--fix\b|--fix-only\b|auto[\s-]?fix\b|auto[\s-]?correct", re.IGNORECASE)
+_CLEARING = re.compile(
+    r"\b(clear|clears|clearing|resolve|resolves|resolving|eliminate|eliminates|"
+    r"eliminating|remove|removes|removing|wipe|wipes|fix all|fixes all)\b",
+    re.IGNORECASE,
+)
+_SENTENCE = re.compile(r"[^.!?\n]+[.!?]?")
+
+
+def commands_promised_to_clear_the_reading(response: str) -> list[str]:
+    """A tool invocation sold as clearing the style count.
+
+    S1-45's fix gave the model the rules, and the very next review used them to
+    make a promise instead of a suggestion:
+
+        "22 of them fixable by automated tools (RUF100, ISC004, C408, I001). The
+        Algorithm suggests running `ruff check --fix` to **clear these** in your
+        next iteration - it's a 5-minute win."
+
+    No command clears this reading. The count is taken with `--isolated`, so the
+    citizen's `ruff check` selects different rules and their `--fix` resolves a
+    different set. They will run it, watch something else happen, and have no way
+    to tell whether they succeeded - which is worse than the original defect,
+    because the original was vague and this is specific.
+
+    The prose forbidding it was added in the same commit that caused it - "if you
+    suggest running a tool, name the rule rather than promising a count" - and lost
+    on its first run. Fourth time in this sequence that prose alone did not hold,
+    and the fourth time a probe was what it needed.
+
+    Sentence-scoped rather than document-scoped on purpose. Naming `--fix` is not
+    itself wrong; a citizen can usefully be told a rule is mechanical. What is
+    wrong is one sentence that names an invocation *and* claims it clears the
+    diagnostics, and scoping to the document would flag a review that mentions
+    the two a paragraph apart for unrelated reasons.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for sentence in _SENTENCE.findall(_prose(response)):
+        if not (_AUTOFIX.search(sentence) and _CLEARING.search(sentence)):
+            continue
+        phrase = " ".join(sentence.split())
+        if phrase.lower() in seen:
+            continue
+        seen.add(phrase.lower())
+        found.append(phrase)
+    return found
+
+
+def _command_promise_findings(response: str) -> list[Violation]:
+    """Blocking. A citizen who runs it cannot tell whether it worked."""
+    promised = commands_promised_to_clear_the_reading(response)
+    if not promised:
+        return []
+    quoted = "; ".join(f'"{phrase}"' for phrase in promised)
+    return [
+        Violation(
+            "command_promised_to_clear",
+            BLOCKING,
+            f"{quoted} promise(s) that a command clears these diagnostics. The "
+            "count is measured with the citizen's lint configuration ignored, so "
+            "their run resolves a different set. Name a rule they can look up; "
+            "never name a command and say what it will clear.",
             quoted,
         )
     ]

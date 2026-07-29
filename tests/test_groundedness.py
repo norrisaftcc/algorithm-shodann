@@ -12,6 +12,7 @@ from shodann.groundedness import (
     BLOCKING_THRESHOLD,
     check_groundedness,
     clearance_promised_as_earned,
+    commands_promised_to_clear_the_reading,
     constructs_claimed_in_data_files,
     coverage_kinds_never_measured,
     ungrounded_attribution,
@@ -454,3 +455,45 @@ def test_measuring_it_later_retires_the_rule() -> None:
     """
     with_branch = "| **branch coverage** | 88.0% | 91.0% | +3.0% |"
     assert coverage_kinds_never_measured("Branch coverage rose to 91%.", with_branch) == []
+
+
+# --- the seventh probe: a command sold as clearing the reading ---------------
+
+
+def test_no_command_is_promised_to_clear_the_style_count() -> None:
+    """Verbatim from round 11, caused by round 10's fix.
+
+        "22 of them fixable by automated tools (RUF100, ISC004, C408, I001). The
+        Algorithm suggests running `ruff check --fix` to clear these in your next
+        iteration - it's a 5-minute win."
+
+    No command clears this reading. The count is taken with `--isolated`, so the
+    citizen's `ruff check` selects different rules and their `--fix` resolves a
+    different set. They run it, watch something else happen, and cannot tell
+    whether they succeeded - worse than the defect it replaced, because that one
+    was vague and this is specific.
+
+    The prose forbidding it shipped in the same commit that caused it and lost on
+    its first run. Fourth time in this sequence prose alone did not hold.
+    """
+    findings = check_groundedness(
+        "The Algorithm suggests running `ruff check --fix` to clear these.",
+        prompt="Style Issues: 23 alignment opportunities.",
+    )
+    promised = [f for f in findings if f.code == "command_promised_to_clear"]
+
+    assert promised, "a promise the citizen cannot verify"
+    assert promised[0].severity == BLOCKING
+
+
+def test_naming_a_rule_or_a_command_alone_stays_legal() -> None:
+    """Sentence-scoped for a reason. Naming `--fix` is not wrong, and telling a
+    citizen a rule is mechanical is the point of the round-10 fix. Only one
+    sentence doing both - an invocation plus a claim about what it clears - is."""
+    for benign in (
+        "`RUF100` marks an unused noqa. Look it up and remove one.",
+        "Most of these are mechanical; `RUF100` is one to read about.",
+        "Run `ruff check --fix` on one file. Separately, the rules are RUF100 and C408.",
+        "Clearing these makes the codebase easier for the next citizen to read.",
+    ):
+        assert commands_promised_to_clear_the_reading(benign) == [], benign

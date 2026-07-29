@@ -459,7 +459,21 @@ Entry 19's class in a new place — a real word from the prompt attached to a th
 
 **Two of the nine rounds produced a defect caused by the previous round's fix**: round 4's "Submission Number minus one" handed the model a subtraction it performed, and round 4's rename supplied the word "branch". Neither was findable by reading the diff — both needed the next run. That is the argument for reading the output after *every* fix rather than after the last one.
 
-**The eighth review was clean, and the ninth was not.** All four probes returned empty against round eight, all six classes stayed fixed, and it was the first of the nine with no finding — then round nine produced entry 23. The honest summary is that this loop has not been observed to go dry: the longest clean streak is one run, and the first round that *looked* like convergence was round five, whose single finding turned out to be a fix no run had tested yet. Nine runs, seven classes, and a defect rate still above zero.
+**24. The fix for S1-45 caused two defects in one review.** Round eleven, immediately after entry 23's sibling landed.
+
+> *"22 style diagnostics identified; **22 of them fixable** by automated tools (RUF100, ISC004, C408, I001)"* ... and in the next section, *"Those **23** diagnostics are noise between you and shipping."*
+
+The total and the fixable count, welded and then swapped, inside one comment. Round ten rendered `23 alignment opportunities` and two lines later `22 of them are fixable by the tool itself` — **two adjacent figures for related quantities, which entry 18 had already established get conflated.** Supplying a second number anyway, in the commit citing entry 18, is the finding. Fixability is now qualitative: *"most of these are mechanical rather than judgement calls"*, plus an explicit "state no second count".
+
+> *"The Algorithm suggests running `ruff check --fix` to **clear these** in your next iteration — it's a 5-minute win."*
+
+Worse than the defect it replaced, because that one was vague and this is specific. **No command clears this reading**: the count is taken with `--isolated`, so the citizen's `ruff check` selects different rules and their `--fix` resolves a different set. They run it, watch something else happen, and cannot tell whether they succeeded.
+
+The prose forbidding exactly this shipped **in the same commit that caused it** — *"if you suggest running a tool, name the rule rather than promising a count"* — and lost on its first run. Fourth time in this sequence that prose alone did not hold, and the fourth time a probe was what it needed. The probe is sentence-scoped: naming `--fix` is legitimate, and so is calling a rule mechanical; one sentence doing both is not.
+
+**Three of eleven rounds produced a defect caused by the previous round's fix** — the subtraction that replaced the streak figure, the word "branch" that came from renaming the complexity row, and both halves of this one. None was visible in the diff. All three needed the next run, which is the argument for reading the output after every fix rather than after the last one.
+
+**The eighth review was clean, and the ninth was not.** All four probes returned empty against round eight, all six classes stayed fixed, and it was the first of the nine with no finding — then round nine produced entry 23. The honest summary is that this loop has not been observed to go dry: the longest clean streak is one run, and the first round that *looked* like convergence was round five, whose single finding turned out to be a fix no run had tested yet. Eleven runs, eight classes, and a defect rate still above zero. Rounds 8 and 10 were clean; 9 and 11 were not.
 
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.

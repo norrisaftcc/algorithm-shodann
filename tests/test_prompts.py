@@ -560,11 +560,13 @@ def test_the_style_rules_reach_the_model_instead_of_being_guessed() -> None:
     rendered = render_prompt(sample_context(reports), prompts_dir=PROMPTS)
 
     assert "`RUF100` x8" in rendered
-    assert "22 of them are fixable" in rendered
     assert "Name only these rules" in rendered, "four rules are not the whole count"
     assert "own lint configuration ignored" in rendered, (
         "the citizen's own ruff check reports a different number and must not be promised one"
     )
+    # The fixable *count* was here for one round and caused round 11's swapped
+    # figures; see test_the_style_section_hands_over_exactly_one_count.
+    assert "mechanical rather than judgement calls" in rendered
 
 
 def test_an_unrecorded_breakdown_refuses_rather_than_inviting_one() -> None:
@@ -579,3 +581,34 @@ def test_an_unrecorded_breakdown_refuses_rather_than_inviting_one() -> None:
     assert "rules behind this count were not recorded" in rendered
     assert "Do not name, guess or illustrate a rule" in rendered
     assert "23 alignment opportunities" in rendered, "the count itself is still reported"
+
+
+def test_the_style_section_hands_over_exactly_one_count() -> None:
+    """Round 11, and the shape is EARLY_RUNS 18 with different numbers.
+
+    Round 10 rendered "23 alignment opportunities" and, two lines later, "22 of
+    them are fixable by the tool itself". The next review said "22 style
+    diagnostics identified; 22 of them fixable" in one bullet and "Those 23
+    diagnostics" in another - the total and the fixable count welded, then
+    swapped, inside one comment.
+
+    Two adjacent figures for related quantities get conflated. That was already
+    written down; supplying a second one anyway is why this test asserts on the
+    numbers present rather than on the sentence I meant to write.
+
+    The per-rule tallies stay, because `RUF100 x8` is unambiguously scoped to a
+    rule and cannot be mistaken for the total.
+    """
+    reports = AnalysisReports(
+        coverage=52.0, lint_issues=23, complexity=0, syntax_errors=0,
+        tests_passed=442, tests_failed=0,
+        style_breakdown=[("RUF100", 8), ("C408", 4)], style_fixable=22,
+    )
+    rendered = render_prompt(sample_context(reports), prompts_dir=PROMPTS)
+    section = rendered.split("**Style Issues**")[1].split("## Test")[0]
+
+    assert "22" not in section, "the fixable count must not be handed over as a figure"
+    assert "mechanical rather than judgement calls" in section, "its substance survives"
+    assert "State no second count" in section
+    assert "No command clears this reading" in section
+    assert "`RUF100` x8" in section, "per-rule tallies are scoped and stay"

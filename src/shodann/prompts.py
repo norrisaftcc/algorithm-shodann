@@ -398,17 +398,27 @@ def describe_style_rules(reports: AnalysisReports) -> str:
         return "No diagnostics, so no rules to report."
 
     rules = ", ".join(f"`{code}` x{count}" for code, count in reports.style_breakdown)
+    # Qualitative, never a count. `style_fixable` is a real reading and it is
+    # deliberately not rendered: it sits two lines from the total, the two are
+    # within one of each other, and a model handed two adjacent figures for
+    # related quantities welds them - which is exactly what happened, and is
+    # EARLY_RUNS 18's class with different numbers in it.
     fixable = (
-        f" {reports.style_fixable} of them are fixable by the tool itself."
-        if reports.style_fixable is not None
+        " Most of these are mechanical rather than judgement calls."
+        if reports.style_fixable
         else ""
     )
     return (
         f"Most frequent rules: {rules}.{fixable} Name only these rules; there may "
-        "be others in the count and you have not been shown them. This reading is "
-        "taken with the citizen's own lint configuration ignored, so their own "
-        "`ruff check` may report a different number - if you suggest running a "
-        "tool, name the rule rather than promising a count."
+        "be others in the count and you have not been shown them. **State no "
+        "second count.** There is one number here, the total above; how many are "
+        "auto-fixable is not yours to state and no arithmetic on the total is "
+        "either.\n\n"
+        "**No command clears this reading.** It is taken with the citizen's own "
+        "lint configuration ignored, so their `ruff check` selects different "
+        "rules and their `--fix` resolves a different set. Name a rule so they "
+        "can look it up; never name a command and say it will clear, fix or "
+        "resolve these diagnostics, and never estimate how long that would take."
     )
 
 
