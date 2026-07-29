@@ -234,9 +234,16 @@ def test_stale_reports_are_deleted_before_the_tools_run(workflow: str) -> None:
 
     Same family as `--isolated` and `--cov=src`: nothing feeding the score may
     be chosen by the citizen being scored.
+
+    Recursive, and asserted as such. `rm -f` exits 1 on a directory, and a
+    citizen can commit one at any of these paths by putting a file inside it -
+    which takes the whole analysis job down under `bash -e` and suppresses the
+    measurement by a quieter route than faking it. The first version of this
+    test keyed on the literal `rm -f`, so hardening the workflow would have
+    turned it red while the contract still held.
     """
     analyse = workflow.split("analyse:")[1].split("  review:")[0]
-    removal = analyse.index("rm -f")
+    removal = analyse.index("rm -rf")
 
     for report in ("coverage.json", "ruff.json", "tests.xml"):
         assert report in analyse[removal : removal + 120], f"{report} survives a hostile commit"
@@ -247,3 +254,21 @@ def test_stale_reports_are_deleted_before_the_tools_run(workflow: str) -> None:
         assert removal < analyse.index(invocation), (
             "deleting after the tools run protects nothing"
         )
+
+
+def test_the_deletion_survives_a_directory_at_the_report_path(workflow: str) -> None:
+    """`rm -f` exits 1 on a directory; the step runs under `bash -e`.
+
+    A citizen commits `coverage.json/anything`, the deletion fails, the
+    analysis job dies, no artifact is uploaded, and the review reports no
+    readings at all. Suppressing a measurement and faking one are the same
+    move with different arithmetic, and a citizen whose coverage is falling
+    prefers the first.
+
+    Verified both directions in a scratch repository: `rm -f` exits 1 and
+    leaves the directory, `rm -rf` exits 0 and removes it.
+    """
+    analyse = workflow.split("analyse:")[1].split("  review:")[0]
+
+    assert "rm -rf" in analyse
+    assert "rm -f coverage.json" not in analyse, "the non-recursive form is the defect"

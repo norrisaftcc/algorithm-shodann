@@ -113,7 +113,16 @@ jobs:
         # be chosen by the citizen being scored. Deleting first is the whole
         # fix, and it is its own step so no future edit to the tool
         # invocations can quietly drop it.
-        run: rm -f coverage.json ruff.json tests.xml
+        #
+        # -rf, not -f. `rm -f` exits 1 on a *directory*, and a citizen can
+        # commit one at any of these paths by putting a file inside it. The
+        # step runs under `bash -e`, so that failure takes the analysis job
+        # down, no artifact is uploaded, and the review degrades to no
+        # readings at all - which is the same suppression by a quieter route:
+        # a citizen whose coverage is falling would rather it not be measured.
+        # Verified both directions before changing the flag. Caught in review
+        # by Copilot on #60.
+        run: rm -rf coverage.json ruff.json tests.xml
 
       - name: Style and complexity
         # Findings exit non-zero. Findings are the point.

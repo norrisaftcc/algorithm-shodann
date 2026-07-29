@@ -467,14 +467,70 @@ def _log_violations(first: list, second: list) -> None:
     "response violated the output contract twice" and the run held no record
     of *which* contract, which is the one fact needed to do anything about it.
 
-    Codes only, never messages or evidence. `Violation.code` is a fixed slug
-    from this program; `message` and `evidence` quote the model's output,
-    which is derived from a citizen-authored PR title. The rule that keeps
-    `main` from echoing the body applies here for the same reason.
+    Codes, plus the evidence of the few codes whose evidence this program
+    wrote itself. `Violation.message` and `.evidence` generally quote the
+    model's output, which is written from a citizen-authored PR title, so the
+    rule that keeps `main` from echoing the body applies to them for the same
+    reason - see `_SPEC_DERIVED` for the exception and why it is safe.
     """
     for label, findings in (("attempt 1", first), ("attempt 2", second)):
-        codes = sorted({finding.code for finding in findings if finding.severity == BLOCKING})
-        sys.stderr.write(f"SHODANN {label} blocked by: {', '.join(codes) or 'nothing'}\n")
+        blocking = [finding for finding in findings if finding.severity == BLOCKING]
+        detail = sorted(
+            {
+                f"{finding.code} ({finding.evidence})"
+                if finding.code in _SPEC_DERIVED and finding.evidence
+                else finding.code
+                for finding in blocking
+            }
+        )
+        sys.stderr.write(f"SHODANN {label} blocked by: {', '.join(detail) or 'nothing'}\n")
+
+
+_SPEC_DERIVED = frozenset({"missing_section"})
+"""Codes whose `evidence` came from the spec, not from the response.
+
+`_check_headings` builds a `missing_section`'s evidence by subtracting the
+headings it *found* from the headings the `ResponseSpec` *requires*, so what
+survives is a list of this program's own constants - the names it never saw.
+It cannot carry model output, and it is the one detail worth having: the first
+live diagnosis read `missing_section` twice and could not say which section,
+which is half a finding.
+
+Nothing else belongs here without the same argument made explicitly.
+`section_order` looks similar and is not: its message reports the order it
+*found*, which is the model's.
+"""
+
+
+def _announce_degradation(reason: str | None) -> None:
+    """A warning annotation, and the job stays green.
+
+    Takes the falsy case rather than making the caller branch on it. `review`
+    tripped our own `C901` at 11 branches when this was an `if` at the call
+    site - the first time the complexity gate wired up two commits ago has
+    fired on this project's own code, which is a better argument for the
+    metric than anything in the PRD.
+
+    Every degraded review before this one exited 0, so the workflow's
+    "Surface the fault to the maintainer" step - gated on the compose step's
+    outcome - had never fired, and `EXIT_DEGRADED`'s own docstring promised a
+    red run that only a *crash* could produce. Graceful degradation and silent
+    degradation were the same code path.
+
+    Green on purpose, rather than fixed by returning `EXIT_DEGRADED`. Under
+    one-repo-per-student the check appears on the *student's* pull request,
+    and a failed model call is precisely what PRD section 8 says must not
+    reflect on their submission - a red X for our outage teaches the wrong
+    thing more effectively than the comment teaches the right one. A warning
+    is visible in the run and in the Actions tab, where the maintainer is,
+    and invisible as a verdict, where the student is.
+
+    The reason is one of this program's own strings, never the model's output
+    and never the citizen's - see `_log_violations`.
+    """
+    if not reason:
+        return
+    sys.stderr.write(f"::warning::SHODANN degraded - {reason}. A comment was still posted.\n")
 
 
 class _ContractViolation(LLMUnavailable):
@@ -621,6 +677,8 @@ def review(
         body = reduced_allocation_comment(facts, result, record, degradation, reports)
 
     body += disclosure
+
+    _announce_degradation(degradation)
 
     if write_state:
         save_citizen_history(

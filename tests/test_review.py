@@ -980,3 +980,59 @@ def test_the_log_names_codes_and_never_quotes_the_model(tmp_path, capsys) -> Non
     logged = capsys.readouterr().err
     assert "You should" not in logged, "the evidence quotes the model, which quotes the citizen"
     assert "rename" not in logged
+
+
+# --- degradation is announced, and still not a verdict ---------------------
+
+
+def test_a_degraded_review_warns_rather_than_failing(tmp_path, capsys) -> None:
+    """Green on purpose, and no longer silent.
+
+    `EXIT_DEGRADED` is returned only when `main` catches an exception, so a
+    review that degrades *gracefully* exited 0 and the workflow's "Surface the
+    fault to the maintainer" step never fired once. Graceful degradation and
+    silent degradation were one code path.
+
+    Red would be the wrong fix. Under one-repo-per-student the check lands on
+    the *student's* pull request, and PRD section 8 is explicit that a failed
+    model call must not reflect on their submission.
+    """
+    body = review(EVENT, root=tmp_path, config=LLMConfig(), write_state=False)
+
+    warning = capsys.readouterr().err
+    assert "::warning::" in warning, "a GitHub annotation, visible where the maintainer is"
+    assert "no model configured" in warning, "and it names the reason"
+    assert "REDUCED ALLOCATION" in body, "the citizen still gets their review"
+
+
+def test_a_healthy_review_announces_nothing(tmp_path, capsys) -> None:
+    """A warning on every green run is a warning nobody reads.
+
+    Written twice. The first version read `sys.stderr.getvalue()` through a
+    `getattr(..., lambda: "")` fallback, which under pytest's capture returns
+    the empty string unconditionally - an assertion that passes whatever the
+    program does. `EARLY_RUNS.md` 13 is a page about exactly that, written the
+    same day, which is how quickly the lesson stops being applied.
+    """
+    review(EVENT, root=tmp_path, config=CONFIG, opener=responder(GOOD_RESPONSE), write_state=False)
+
+    assert "::warning::" not in capsys.readouterr().err
+
+
+def test_the_missing_section_is_named_not_just_counted(tmp_path, capsys) -> None:
+    """The live diagnosis said `missing_section` twice and stopped there.
+
+    Which section is the whole of the finding. Safe to log because
+    `_check_headings` builds that evidence by subtracting the headings it
+    found from the ones the spec requires, so what remains is this program's
+    own constants - never the model's output.
+    """
+    truncated = GOOD_RESPONSE.split("### \U0001f527 Recommended Iteration")[0]
+
+    review(
+        EVENT, root=tmp_path, config=CONFIG, opener=responder(truncated, truncated),
+        write_state=False,
+    )
+
+    logged = capsys.readouterr().err
+    assert "missing_section (Recommended Iteration)" in logged

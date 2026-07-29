@@ -279,7 +279,20 @@ Three things worked for the first time in that comment: the ORANGE disclosure fo
 
 **What changed:** `_log_violations` writes the blocking `Violation.code` slugs for both attempts to stderr. Codes only — `message` and `evidence` quote the model's output, which is written from a citizen-authored PR title, and the rule that stops `main` echoing the body applies for the same reason.
 
-The exit code is **deliberately unchanged pending a decision**, because it is not merely a bug: under one-repo-per-student, a red check appears on the *student's* pull request, and a failed model call is the one thing `PRD.md` §8 insists must not reflect on their submission.
+**And on the very next run it answered the question:**
+
+```
+SHODANN attempt 1 blocked by: missing_section
+SHODANN attempt 2 blocked by: missing_section
+```
+
+Haiku is omitting a required heading, twice, including on a retry that names the violation. The FORMAT layer asks for four sections in a fenced example and the spec requires the same four, so the prompt and the checker agree — this is a model that will not reliably emit an empty-feeling section, not a contract two documents disagree about.
+
+That log line also exposed the *next* gap immediately: it said `missing_section` and could not say **which** section, which is half a finding. Now named, via a deliberately narrow allowlist — `_check_headings` builds that evidence by subtracting the headings it found from the ones the spec requires, so what survives is this program's own constants and cannot carry model output. `section_order` looks like it qualifies and does not: its message reports the order it *found*, which is the model's.
+
+**The degradation is now announced, and the job still passes.** `::warning::` naming the reason, exit 0. Red would be the wrong instrument: under one-repo-per-student the check lands on the *student's* pull request, and a failed model call is the one thing `PRD.md` §8 insists must not reflect on their submission. A warning is visible in the Actions tab, where the maintainer is, and is not a verdict, where the student is.
+
+**A small dividend.** Adding that call took `review` to eleven branches and tripped `C901` — the first time the complexity gate wired up two commits earlier has fired on this project's own code. It was fixed by moving the falsy check inside the callee rather than by raising the threshold, which is the whole argument for the metric, made by the metric.
 
 ---
 
