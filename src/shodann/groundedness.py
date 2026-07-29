@@ -34,6 +34,7 @@ from .validator import ADVISORY, BLOCKING, Violation
 __all__ = [
     "BLOCKING_THRESHOLD",
     "check_groundedness",
+    "clearance_promised_as_earned",
     "constructs_claimed_in_data_files",
     "ungrounded_attribution",
     "ungrounded_percentages",
@@ -207,6 +208,7 @@ def check_groundedness(
         _percentage_findings(response, prompt)
         + _attribution_findings(response, prompt)
         + _construct_findings(response)
+        + _clearance_findings(response)
     )
     invented = ungrounded_tokens(response, prompt)
     if not invented:
@@ -364,6 +366,93 @@ def _construct_findings(response: str) -> list[Violation]:
             "given no file list and no source - only readings, counts and a "
             "title - so you do not know what any file contains. Give the advice "
             "without naming a location for it.",
+            quoted,
+        )
+    ]
+
+
+_ASCENT = (
+    "scale", "scales", "scaling", "rise", "rises", "rising", "climb", "climbs",
+    "advance", "advances", "advancing", "progress", "progresses", "earn", "earns",
+    "reach", "reaches", "unlock", "unlocks", "promote", "promoted", "promotion",
+    "graduate", "graduates", "raise", "raises", "higher", "toward", "towards",
+)
+
+_BAND_WORDS = ("clearance", "clearances", "band", "bands")
+
+_ASCENT_RE = "|".join(_ASCENT)
+_BANDS_RE = "|".join(_BAND_WORDS)
+
+_EARNED_CLEARANCE = re.compile(
+    rf"\b(?:{_ASCENT_RE})\b(?:\W+\w+){{0,5}}?\W+(?:{_BANDS_RE})\b"
+    rf"|\b(?:{_BANDS_RE})\b(?:\W+\w+){{0,4}}?\W+(?:{_ASCENT_RE})\b",
+    re.IGNORECASE,
+)
+
+
+def clearance_promised_as_earned(response: str) -> list[str]:
+    """Claims that a citizen's band can be raised by their work.
+
+    A band is a role assignment. An instructor sets it in
+    `.shodann/clearances.json`, no reading is evidence about it, and #59
+    *declined* `prompts/03`'s `INFER_CLEARANCE` rather than leaving it
+    unimplemented - a band inferred from readings is a second score, and this
+    product rests on improvement outranking position. A citizen told that
+    iterating well raises their band has been handed that second score by the one
+    voice they cannot check it against.
+
+    **This exists because the prose version failed.** `clearance.NOT_EARNED` was
+    added at every band on the previous commit, in as many words - "nothing a
+    citizen does to their code moves it... never tell a citizen that work of any
+    kind will raise their clearance". The next review said "this is how citizens
+    scale from ORANGE to higher clearance bands" anyway, with that instruction
+    present in the rendered prompt and verified present. EARLY_RUNS 16 states the
+    general result and this is a clean instance of it: an instruction against a
+    *class* of claim is unfalsifiable by anything except the next run, and it lost
+    that run. The prose stays, because it is the right thing to tell a model; the
+    probe is what makes it hold.
+
+    **Unconditional, and here the reason is sharper than for its siblings.**
+    `ungrounded_attribution` checks against the prompt so that supplying the
+    score's composition would retire it. The same design would permanently
+    disable this one, because the prompt now contains "will raise their
+    clearance" *in order to forbid it* - a prompt-relative check would read its
+    own prohibition as a licence. A rule stated in the negative cannot be
+    enforced by asking whether the words appear.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for match in _EARNED_CLEARANCE.finditer(_prose(response)):
+        phrase = " ".join(match.group(0).split())
+        lowered = phrase.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        found.append(phrase)
+    return found
+
+
+def _clearance_findings(response: str) -> list[Violation]:
+    """Blocking. A false belief about their own standing is the worst of these.
+
+    The other probes send a citizen to do work that cannot succeed. This one
+    tells them the course works in a way it does not, in the voice of the system
+    that assigns the thing being described, and nothing in their experience will
+    correct it.
+    """
+    invented = clearance_promised_as_earned(response)
+    if not invented:
+        return []
+    quoted = ", ".join(f'"{phrase}"' for phrase in invented)
+    return [
+        Violation(
+            "clearance_as_earned",
+            BLOCKING,
+            f"{quoted} present(s) a clearance band as something work can raise. "
+            "A band is assigned by an instructor and no reading here is evidence "
+            "about it. Give the advice on its own merits; never as a step toward "
+            "a band.",
             quoted,
         )
     ]

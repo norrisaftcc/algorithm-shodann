@@ -63,7 +63,7 @@ You measure dy/dx (rate of change), not y (absolute position).
 | **Program Week** | {{ CURRENT_WEEK }} |
 | **Submission Number** | {{ PR_COUNT }} - this one, counting from their first |
 {% if COVERAGE_INSTRUMENTED %}| **Last Coverage** | {{ PREV_COVERAGE }} |
-{% endif %}| **Iteration Streak** | unbroken - every submission so far counted, whatever each scored. This is Submission Number minus one, not a second figure to report |
+{% endif %}| **Iteration Streak** | unbroken - every submission so far counted, whatever each scored |
 
 ## Submission Context
 

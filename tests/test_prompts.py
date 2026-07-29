@@ -462,7 +462,15 @@ def test_the_two_submission_counters_do_not_contradict_each_other() -> None:
     assert not re.search(r"Iteration Streak\*\* \| \d", rendered), (
         "the streak row must carry no number of its own - see the docstring"
     )
-    assert "not a second figure to report" in rendered
+    # And no arithmetic either. The first version of this fix replaced the
+    # duplicate figure with "This is Submission Number minus one, not a second
+    # figure to report" - which handed the model a calculation and a prohibition
+    # in one sentence. It did the calculation: the next review opened with
+    # "19 consecutive submissions" beside "20 submissions, 20 counted", the same
+    # contradiction restored from a subtraction rather than from a second row.
+    # An instruction not to report a number is not a way to avoid supplying one.
+    assert "minus one" not in rendered, "do not hand the model the subtraction"
+    assert "whatever each scored" in rendered, "the sign-independence still has to survive"
 
 
 def test_a_measured_zero_is_not_reported_as_an_absent_reading() -> None:

@@ -11,6 +11,7 @@ import pytest
 from shodann.groundedness import (
     BLOCKING_THRESHOLD,
     check_groundedness,
+    clearance_promised_as_earned,
     constructs_claimed_in_data_files,
     ungrounded_attribution,
     ungrounded_percentages,
@@ -308,3 +309,73 @@ def test_naming_a_data_file_without_claiming_code_in_it_is_fine() -> None:
         "The Algorithm suggests a docstring on your producer function.",
     ):
         assert constructs_claimed_in_data_files(benign) == [], benign
+
+
+# --- the fifth probe: the one written because prose lost ---------------------
+
+
+@pytest.mark.parametrize(
+    "posted",
+    [
+        # Round 6, with clearance.NOT_EARNED present in the rendered prompt.
+        "Ten commits in a single PR shows you're breaking work into reviewable "
+        "chunks. This is how citizens scale from ORANGE to higher clearance bands.",
+        # Round 5, same claim, before the prose rule existed.
+        "This is how citizens scale from ORANGE to higher clearance.",
+        # Round 3, the same claim in a shape a phrase-match would miss.
+        "building the habit of self-documenting code - a skill that compounds "
+        "as your clearance rises.",
+    ],
+)
+def test_a_band_is_never_presented_as_something_work_can_raise(posted: str) -> None:
+    """Three real instances across three reviews of PR #61.
+
+    A band is a role assignment. #59 *declined* `prompts/03`'s `INFER_CLEARANCE`
+    rather than leaving it unimplemented, because a band inferred from readings is
+    a second score and this product rests on improvement outranking position.
+
+    The middle case is why this is a probe and not a sentence. `clearance.
+    NOT_EARNED` was added at every band on the previous commit - "never tell a
+    citizen that work of any kind will raise their clearance" - and the next
+    review made the claim anyway, with the instruction verified present in the
+    rendered prompt. EARLY_RUNS 16's result, cleanly reproduced: an instruction
+    against a class of claim is unfalsifiable except by the next run, and it lost.
+
+    The third case is why the check is not a phrase list. "as your clearance
+    rises" shares no wording with "scale from ORANGE to higher clearance bands"
+    and makes the identical claim.
+    """
+    findings = check_groundedness(posted, prompt="Clearance Level: ORANGE (3).")
+    earned = [f for f in findings if f.code == "clearance_as_earned"]
+
+    assert earned, "a promotion mechanism the readings are not evidence about"
+    assert earned[0].severity == BLOCKING
+
+
+def test_the_prompts_own_prohibition_is_not_read_as_a_licence() -> None:
+    """Why this probe is unconditional where `ungrounded_attribution` is not.
+
+    That one checks against the prompt so supplying the score's composition
+    retires it. The same design would permanently disable this one: the prompt
+    now says "never tell a citizen that work of any kind will raise their
+    clearance", so a prompt-relative check would find its own prohibition and
+    treat every violation as grounded. A rule stated in the negative cannot be
+    enforced by asking whether the words appear.
+    """
+    from shodann.clearance import NOT_EARNED
+
+    assert "raise their clearance" in NOT_EARNED, "the prohibition uses the forbidden words"
+    assert clearance_promised_as_earned(
+        "This is how citizens scale to higher clearance bands."
+    ), "and the probe must fire regardless of what the prompt contains"
+
+
+def test_talking_about_the_band_a_citizen_holds_stays_legal() -> None:
+    """Clearance calibration is most of what LAYER 3 does and must survive."""
+    for benign in (
+        "At ORANGE clearance, one clear example per function is sufficient.",
+        "Your clearance is set in .shodann/clearances.json - you are currently ORANGE.",
+        "Match complexity of suggestions to clearance level.",
+        "Pick one style diagnostic and fix that pattern everywhere.",
+    ):
+        assert clearance_promised_as_earned(benign) == [], benign
