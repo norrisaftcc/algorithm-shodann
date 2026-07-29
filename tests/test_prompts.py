@@ -357,3 +357,19 @@ def test_the_reserved_first_tests_phrase_is_not_offered_to_the_model() -> None:
     instruction = " ".join(rendered.split("Algorithm-Approved Patterns")[1].split())
 
     assert f'Do not write "{FIRST_TESTS_PHRASE}"' in instruction
+
+
+def test_the_prompt_forbids_connecting_two_instruments() -> None:
+    """Two live reviews invented a mechanism between unrelated measurements.
+
+    "gets you back to 98%+ coverage territory" from a style cleanup, and
+    "complexity may have increased faster than test coverage" when the
+    measured complexity delta was 0. Neither is a hallucinated *number* - both
+    are hallucinated *causation*, which is the harder thing and the one that
+    sends a citizen to do work that cannot succeed.
+    """
+    rendered = " ".join(render_prompt(sample_context(), prompts_dir=PROMPTS).split())
+
+    assert "separate instruments, and you may not connect them" in rendered
+    assert "If a delta reads 0, nothing moved" in rendered
+    assert "no targets, no predictions" in rendered

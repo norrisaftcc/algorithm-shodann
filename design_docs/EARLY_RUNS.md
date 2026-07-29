@@ -340,11 +340,33 @@ The hard/soft split held on its first real outing: the model invented no number.
 
 Both are fixed in the prompt, which is the only layer that can. The score's terms are now stated where the score is stated, with lines and files explicitly excluded.
 
-**Status: the content guards are unverified.** They are instructions to a model, not checks on its output, so unlike everything else on this page they are hope rather than mechanism. The next synthesised review is the test.
+**Status: both guards held on the next run** — the score was attributed to "tests added, docstrings written, and lint opportunities cleared", all real composite terms, and the reserved phrase did not reappear. See entry 16, which is what that same review got wrong instead.
 
 ---
 
-## What the pattern says
+## 16. Two instruments, one invented mechanism
+
+**Where:** PR #60, the second synthesised review, minutes after entry 15's guards shipped.
+
+Both guards held. Every figure was again exact — 365 tests, 20 style diagnostics, 0 syntax errors, 97.9% → 97.5%. And the review still contained two false claims, neither of them a fabricated *number*:
+
+> **"Select one of those 20 style diagnostics ... this gets you back to 98%+ coverage territory."**
+
+Style diagnostics and coverage are unrelated instruments. Cleaning lint changes coverage by exactly nothing, and 98%+ is a figure that appears nowhere — this citizen has never been above 97.9%. It sits in **Recommended Iteration**, the one section a student is told to act on, so the failure mode is a citizen doing twenty minutes of work to reach a number that cannot move.
+
+> **"The slight dip suggests complexity may have increased faster than test coverage."**
+
+The measured C901 delta is **0**. The DATA layer says so on the row above.
+
+**What this run actually taught.** Entry 15's fix was instance-shaped: it named the score's terms because the score's terms were what got misused. The very next review produced two more of the same species in two different places. Patching instances loses — the class is *inventing causation between independent measurements*, and prose instructions against a class are unfalsifiable by anything except the next run.
+
+**So this one got a mechanism.** `groundedness.py` had named this exact limit in its own docstring since it was written — *"it cannot catch a mislabelled figure"* — and the limit was drawn too narrowly. It checked backticked identifiers only. It now also checks **percentages**: any figure the response states that no tool report contains.
+
+Blocking from the first occurrence, unlike the identifier probe. One novel identifier is a suggestion (`consider naming it user_age`) and rejecting it would reject good advice; one novel percentage is a measurement nobody took, and there is no reading of it that helps a citizen. Rounding still passes — a model writing 97% for a measured 97.5% is being readable — while 98 against 97.5 does not, which is precisely the case that mattered.
+
+This would also have caught entry 2 ("a whopping 0.0%") and entry 6 ("from 0% to 218 complexity"). Three of the sixteen entries on this page are one missing check.
+
+**The causal half is still prose**, and still unverifiable: the prompt now says the readings are separate instruments and may not be connected, that a delta of 0 means nothing moved, and that no figure may be predicted. Being unable to test that is the honest state of it — but the figure probe now catches every *consequence* of the causal error that carries a number, which is most of them.
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
 
