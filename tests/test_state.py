@@ -588,3 +588,67 @@ def test_the_live_record_still_loads(live_ledger: dict) -> None:
     assert record.schema_version == 1, "written before versioning; absent means 1"
     assert record.extra == {}
     assert len(record.discontinuities) == 3
+
+
+# --- what a hand-edited ledger may and may not do ---------------------------
+
+
+@pytest.mark.parametrize(
+    "stored", ["false", "true", "0", "no", "yes", 1, 0, None, [], {}, "True"]
+)
+def test_only_a_literal_true_marks_coverage_as_measured(stored) -> None:
+    """`bool("false")` is True, and the consequence is a fabricated gain.
+
+    Reported by Copilot on #61. Python reads every non-empty string as truthy, so
+    a hand-written `"coverage_instrumented": "false"` meant the exact opposite of
+    what its author typed - and this flag is what `review.reconcile_coverage`
+    consults to decide whether a coverage delta may be claimed at all. The wrong
+    answer here manufactures a gain nobody earned, which is EARLY_RUNS 9 with a
+    new cause. `"0"`, `"no"` and even `"True"` all read True under `bool`.
+
+    Everything that is not literally `true` reads as unmeasured, which is the
+    safe direction on purpose: an unreadable flag means we do not know, and not
+    knowing means claiming nothing. Under-claiming costs a citizen a
+    celebration; over-claiming tells them they achieved something they did not.
+    """
+    record = CitizenRecord.from_dict({"citizen": "octocat", "coverage_instrumented": stored})
+    assert record.coverage_instrumented is False
+
+
+def test_a_real_true_still_reads_as_measured() -> None:
+    """The strictness must not cost the case that matters - the live record."""
+    assert CitizenRecord.from_dict(
+        {"citizen": "octocat", "coverage_instrumented": True}
+    ).coverage_instrumented is True
+
+    with LIVE_LEDGER.open(encoding="utf-8") as handle:
+        assert CitizenRecord.from_dict(json.load(handle)).coverage_instrumented is True
+
+
+@pytest.mark.parametrize("stored", ["not-a-number", "", "1.5.2", [], {}, None])
+def test_an_unreadable_schema_version_does_not_deny_a_review(stored, tmp_path) -> None:
+    """Found by checking the neighbour of Copilot's finding, two lines away.
+
+    `int(data.get("schema_version", 1))` raises `ValueError` on any non-numeric
+    string, and `load_citizen_history` catches `OSError`, `UnicodeDecodeError`,
+    `json.JSONDecodeError`, `KeyError` and `TypeError` - not `ValueError`.
+    `json.JSONDecodeError` *is* a `ValueError` subclass, which is what makes it
+    easy to miss: the tuple looks like it covers the family and catches one
+    member of it.
+
+    So one mistyped version raised out of `from_dict`, past the degradation path,
+    and denied that citizen their review - which PRD section 8 forbids in as many
+    words. Every other unreadable thing in this module degrades to a default.
+    Copilot's finding was a wrong value; this one is a citizen losing their
+    feedback, and it was adjacent to it.
+    """
+    path = citizen_path("octocat", tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"citizen": "octocat", "schema_version": stored}), encoding="utf-8"
+    )
+
+    record = load_citizen_history("octocat", tmp_path)
+
+    assert record.schema_version == SCHEMA_VERSION, "unreadable means 1, like absent"
+    assert record.citizen == "octocat", "and the citizen still gets a review"

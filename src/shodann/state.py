@@ -338,11 +338,22 @@ class CitizenRecord:
             velocity_trend=data.get("velocity_trend", TREND_NEW),
             velocity_history=list(data.get("velocity_history", [])),
             last_degradation=data.get("last_degradation"),
-            coverage_instrumented=bool(data.get("coverage_instrumented", False)),
+            # `is True`, never `bool(...)`. Python reads every non-empty string as
+            # truthy, so a hand-written `"coverage_instrumented": "false"` meant
+            # exactly the opposite of what its author typed - and the consequence
+            # is not a cosmetic one: `review.reconcile_coverage` consults this to
+            # decide whether a coverage delta may be claimed at all, so the wrong
+            # answer fabricates a gain nobody earned (EARLY_RUNS 9). `"0"`, `"no"`
+            # and `"yes"` all read True as well. Found by Copilot on #61.
+            #
+            # Anything that is not literally `true` reads as unmeasured, which is
+            # the safe direction: an unreadable flag means we do not know, and not
+            # knowing means claiming nothing.
+            coverage_instrumented=data.get("coverage_instrumented") is True,
             discontinuities=list(data.get("discontinuities", [])),
             # Absent means 1: every ledger written before versioning existed is
             # version 1 by construction, including the live record.
-            schema_version=int(data.get("schema_version", 1)),
+            schema_version=_as_version(data.get("schema_version")),
             # Everything this build has never heard of, kept whole so the next
             # write does not delete a newer SHODANN's fields (S1-19). Computed
             # against `_STORED_KEYS` rather than the dataclass fields, because
@@ -431,6 +442,31 @@ def read_clearance(citizen: str, root: Path | str = ".") -> int | None:
     # Saturate rather than reject. A band of 9 is a typo, not grounds for
     # refusing to review someone's work.
     return max(1, min(level, 6))
+
+
+def _as_version(value) -> int:
+    """A stored `schema_version`, or 1 when it is absent or unreadable.
+
+    Was `int(data.get("schema_version", 1))`, which raises `ValueError` on any
+    non-numeric string - and `load_citizen_history` catches `OSError`,
+    `UnicodeDecodeError`, `json.JSONDecodeError`, `KeyError` and `TypeError`, not
+    `ValueError`. `json.JSONDecodeError` *is* a `ValueError` subclass, which is
+    what makes this easy to miss: the tuple looks like it covers the family and
+    catches only one member of it.
+
+    So one mistyped version in one ledger raised out of `from_dict`, past the
+    degradation path, and denied that citizen their review - which PRD section 8
+    forbids in as many words. Every other unreadable thing in this module
+    degrades to a default; this one crashed.
+
+    Found by checking the neighbour of a defect Copilot reported on #61. The
+    reported one was a wrong value; this one is a citizen losing their feedback,
+    and it was two lines away.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 1
 
 
 def load_citizen_history(citizen: str, root: Path | str = ".") -> CitizenRecord:

@@ -399,3 +399,30 @@ def test_the_board_is_committed_with_the_ledger_it_mirrors(workflow: str) -> Non
         "the board must be regenerated before change detection reads it"
     )
     assert workflow.count("--action leaderboard") == 1, "one producer, or they race"
+
+
+def test_a_failed_fetch_is_retried_and_a_conflict_is_not(workflow: str) -> None:
+    """Reported by Copilot on #61, and correct.
+
+    The first version read `if ! git fetch ... || ! git rebase ...` and took both
+    failures down one branch that warned and exited. So a single transient fetch
+    failure - a network blip, a rate limit, a momentarily unreachable remote -
+    ended the whole thing on attempt one, and the three attempts only ever
+    applied to a rejected push. The most likely transient failure was the one
+    case that got no retry.
+
+    The asymmetry is the point and both halves are asserted. A fetch failure
+    `continue`s, because it may not recur. A rebase conflict `exit`s, because two
+    runs wrote the same citizen file and it will conflict identically every time -
+    retrying spends ten seconds to reach the same warning.
+    """
+    step = _ledger_step(workflow)
+    loop = step.split("for attempt in")[1]
+
+    fetch = loop.split("git fetch")[1].split("git rebase")[0]
+    assert "continue" in fetch, "a transient fetch failure must be retried, not fatal"
+
+    rebase = loop.split("! git rebase")[1].split("git push")[0]
+    assert "rebase --abort" in rebase
+    assert "exit 0" in rebase, "a conflict does not resolve on a retry"
+    assert "continue" not in rebase, "and must not consume the remaining attempts"

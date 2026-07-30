@@ -401,17 +401,30 @@ jobs:
           # remote-tracking ref, and rebasing onto a stale one reproduces the
           # rejection it was supposed to cure.
           for attempt in 1 2 3; do
-            if ! git fetch origin "$GITHUB_BASE_REF" || ! git rebase FETCH_HEAD; then
-              # A conflict does not resolve itself on a retry - two runs wrote
-              # the same citizen file - so this leaves the loop rather than
-              # spending two more attempts reaching the same warning.
+            # A failed fetch is the transient case this loop exists for - a
+            # network blip, a rate limit, a momentarily unreachable remote - so
+            # it retries. The first version of this loop treated it as fatal,
+            # which meant the three attempts only ever applied to a rejected
+            # push and the most likely transient failure got no retry at all.
+            if ! git fetch origin "$GITHUB_BASE_REF"; then
+              echo "::warning::SHODANN could not fetch ${GITHUB_BASE_REF} (attempt ${attempt}/3)."
+              sleep 5
+              continue
+            fi
+
+            # A rebase conflict is the opposite: two runs wrote the same citizen
+            # file, and it will conflict identically on every attempt. Retrying
+            # spends ten seconds to reach the same warning, so this leaves.
+            if ! git rebase FETCH_HEAD; then
               git rebase --abort || true
               echo "::warning::SHODANN could not replay the ledger for @${CITIZEN} onto ${GITHUB_BASE_REF}; the record was not written. The review posted normally and this does not reflect on the submission."
               exit 0
             fi
+
             if git push origin "HEAD:${GITHUB_BASE_REF}"; then
               exit 0
             fi
+            echo "::warning::Ledger push for @${CITIZEN} was rejected (attempt ${attempt}/3); re-fetching."
             sleep 5
           done
 
