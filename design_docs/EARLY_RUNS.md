@@ -477,6 +477,8 @@ The prose forbidding exactly this shipped **in the same commit that caused it** 
 
 **The eighth review was clean, and the ninth was not.** All four probes returned empty against round eight, all six classes stayed fixed, and it was the first of the nine with no finding — then round nine produced entry 23. The honest summary is that this loop has not been observed to go dry: the longest clean streak is one run, and the first round that *looked* like convergence was round five, whose single finding turned out to be a fix no run had tested yet. Eleven runs, eight classes, and a defect rate still above zero. Rounds 8 and 10 were clean; 9 and 11 were not. Rounds 12 to 15 followed and are counted in entry 25; the only finding out of them is recorded there as `S1-46`, because it is not a defect in an instrument.
 
+**Round 16 produced this entry's class a third time, and both of entry 24's fixes held.** *"0 compilation barriers. Your code parses cleanly across all 26 files"* — `FILES_CHANGED` welded onto the syntax reading, which `py_compile` takes over Python files only, on a pull request whose most recent commit was four markdown files. Filed as `S1-47` and **not fixed**: the review had landed ten minutes after the commit before it, which is the condition `addenda/accumulation.md` describes, and a record has no consequence to observe where a fix does. What held is the more useful half — fixability stayed qualitative with no second count, the rule was named with documentation pointed at rather than a command promised, complexity's measured zero read as a result, and coverage was labelled as *line* coverage. Four probes, four classes, second run each.
+
 
 ## 25. The loop accelerated, and the acceleration was the only reliable signal
 
