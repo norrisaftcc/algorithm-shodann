@@ -2,13 +2,13 @@
 
 > *The Algorithm celebrates those who grow, not those who rest.*
 
-**Last Updated**: 2026-07-29T17:28:57Z
+**Last Updated**: 2026-07-30T20:22:50Z
 
 ## 🚀 Velocity Rankings
 
 | Rank | Citizen | Velocity | Trend | Submissions | Coverage |
 |------|---------|----------|-------|-------------|----------|
-| 1 | @norrisaftcc | 149.5 | 📈* | 19* | 97% |
+| 1 | @norrisaftcc | 266.8 | 📈* | 20* | 98% |
 
 * This figure spans a recorded discontinuity - the field changed what it counts, or carries residue of a defect, at some point in this citizen's history. The stored value is kept rather than corrected; see `discontinuities` in that citizen's `.shodann/citizens/*.json` for what changed and when. Do not read it as a clean series.
 

@@ -7,24 +7,28 @@
   },
   "clearance_level": 2,
   "first_submission": "2026-07-25T23:08:59Z",
-  "last_updated": "2026-07-29T02:49:00Z",
+  "last_updated": "2026-07-30T20:22:50Z",
   "baseline_established": true,
-  "pr_count": 19,
-  "iteration_streak": 19,
+  "pr_count": 20,
+  "iteration_streak": 20,
   "rage_state_encounters": 0,
   "last_metrics": {
-    "coverage": 97.4,
-    "test_count": 295,
+    "coverage": 97.8,
+    "test_count": 365,
     "complexity": 0,
-    "loc": 7910,
-    "functions": 483,
-    "docstrings": 338,
-    "lint_issues": 19,
+    "loc": 10584,
+    "functions": 581,
+    "docstrings": 444,
+    "lint_issues": 24,
     "syntax_errors": 0
   },
-  "last_velocity": 149.48,
+  "last_velocity": 266.84,
   "velocity_trend": "ascending",
   "velocity_history": [
+    {
+      "score": 266.84,
+      "date": "2026-07-30T20:22:50Z"
+    },
     {
       "score": 149.48,
       "date": "2026-07-29T02:49:00Z"
@@ -60,10 +64,6 @@
     {
       "score": 0.5,
       "date": "2026-07-26T01:38:10Z"
-    },
-    {
-      "score": 34.1,
-      "date": "2026-07-26T01:25:09Z"
     }
   ],
   "last_degradation": "no model configured",
@@ -94,5 +94,6 @@
       "kind": "unit_change",
       "note": "S1-39, following S1-03. complexity changed units on this date without changing name: a `def ` count before, a ruff C901 count after. The stored 0 is a C901 count sitting on a history of def counts, so any delta spanning this date subtracts two different quantities. Nothing punitive follows, because the composite score no longer reads this field, but it is not comparable across this seam and must not be plotted as one series."
     }
-  ]
+  ],
+  "schema_version": 1
 }
