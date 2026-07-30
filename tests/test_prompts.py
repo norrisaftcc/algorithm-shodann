@@ -237,13 +237,29 @@ def test_every_bracketed_emoji_name_has_a_mapping() -> None:
     ["02_rage_state_addon.md", "04_first_submission_prompt.md", "05_edge_case_handlers.md"],
 )
 def test_templates_with_control_flow_fail_with_a_useful_message(template: str) -> None:
-    """These are out of scope for rung 1; the error must say why, not raise a Jinja trace."""
-    path = PROMPTS / template
-    if "TEMPLATE:BEGIN" not in path.read_text(encoding="utf-8"):
-        pytest.skip(f"{template} has no template markers yet")
+    """These are out of scope for rung 1; the error must say why, not raise a Jinja trace.
+
+    This test skipped all three of its cases for its entire life, so its assertion
+    had never once executed. The guard asked for `TEMPLATE:BEGIN`, no template
+    except `01` has ever carried those markers, and `pytest.skip` fired before
+    `pytest.raises` could. `sss` reads identically to `...` in a summary line.
+
+    EARLY_RUNS 13's class, found in a new place: a guard is a claim that something
+    would otherwise break, and this one never made the claim. Reverting the
+    production code would not have caught it either - the test was green against
+    nothing whatever you did to the code, because it never reached the code.
+
+    Fixed by testing the layer the intent was always about. `render_template_text`
+    takes text rather than a path, so the marker requirement - a different failure,
+    raised by `extract_template` for a different reason - stops standing in front
+    of the pseudo-syntax check. The input is each file's real content, which is
+    better than the fixture the old version never got to: 02 carries 4 pseudo-syntax
+    constructs, 04 carries 8, 05 carries 22.
+    """
+    text = (PROMPTS / template).read_text(encoding="utf-8")
 
     with pytest.raises(UnsupportedTemplateSyntax, match="control flow"):
-        render_prompt(sample_context(), template=template, prompts_dir=PROMPTS)
+        render_template_text(text, sample_context(), source=template)
 
 
 def test_the_error_names_the_conversion() -> None:

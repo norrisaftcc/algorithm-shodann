@@ -476,6 +476,68 @@ The prose forbidding exactly this shipped **in the same commit that caused it** 
 **The eighth review was clean, and the ninth was not.** All four probes returned empty against round eight, all six classes stayed fixed, and it was the first of the nine with no finding — then round nine produced entry 23. The honest summary is that this loop has not been observed to go dry: the longest clean streak is one run, and the first round that *looked* like convergence was round five, whose single finding turned out to be a fix no run had tested yet. Eleven runs, eight classes, and a defect rate still above zero. Rounds 8 and 10 were clean; 9 and 11 were not.
 
 
+## 25. The loop accelerated, and the acceleration was the only reliable signal
+
+**Where:** PR #61, measured across all 23 commits after the fact rather than noticed during them.
+
+Fourteen review rounds produced eleven defect classes. That much was already recorded. What was not recorded is the shape of the rate, and the rate is the finding.
+
+**Interval between commits, in order:**
+
+```
+ #2   78m     #11  333m     #16   3m
+ #4   99m     #12    3m     #17   3m
+ #10 157m     #13    4m     #18   3m
+              #14    3m     #19   4m
+              #15    3m     #20   4m
+                            #21   4m
+```
+
+Eleven consecutive commits at three to four minutes, after intervals in hours. (The 721-minute gap is a session break. The 0-minute entries are bot ledger commits and one batched push. The clean run is 11–21.)
+
+**And the lag from a fix to the defect it caused compressed as the rate rose:**
+
+| Seeding fix | Landed | Surfaced | Lag |
+|---|---|---|---|
+| streak fix | round 4 | round 7 | 3 |
+| complexity rename | round 4 | round 9 | 5 |
+| style-breakdown fix | round 10 | round 11 | 1 |
+| prose rule | round 10 | round 11 | 1 |
+
+Rate of change up roughly 25×; time to observe a consequence down 4×. One of those defects was a prohibition shipped in the same commit as the material that made it violable.
+
+**Every commit was individually verified.** Each guard was reverted against the defect it named, the suite was green, ruff was clean. The failure is not carelessness and no amount of care would have prevented it, which is the point: **at three minutes per fix the previous fix's output had not been read yet**, so every change landed on top of unobserved change. The condition has a name and it is measurable from git alone:
+
+> **commit interval < time-to-observe-consequence**
+
+Producing changes faster than their results can be read is accumulation without observation. Nothing on this page detects it, and the suite cannot — the suite was green through the entire acceleration.
+
+### Loops indicate drift on the floor, and always on Scope
+
+`design_docs/addenda/the-algorithm.md` gives the floor as **Audience · Scope · Format · Path**. An unterminating loop implicates one or more, and *necessarily* implicates Scope. The reason is structural rather than statistical: Audience, Format and Path errors produce one wrong artifact. Only a wrong boundary produces *another pass*. You re-enter because the previous pass did not contain the work. A Path failure does not loop at all — by the addendum it reopens the contract, a different event.
+
+Four for four, on this pull request:
+
+| Loop | Passes | What drifted |
+|---|---|---|
+| streak figure | 3 | Scoped to *the row*; real scope was *everywhere the figure reaches the prompt* |
+| clearance rule | 2 | Scoped to *the model's behaviour*, unenforceable; enforceable scope was *the assembled output* |
+| a term meaning two things | ongoing | Referent's scope never pinned, so each build-on widened it |
+| S1-45 | 5 | Mis-scoped as structural; it was two hours, and the judgement was never re-checked |
+
+So a loop count is not merely a tally of annoyances. **It is evidence that a boundary is wrong**, which is what makes it worth measuring rather than enduring.
+
+### The word that was its own instance
+
+For most of this pull request, "a thing that changed meaning without changing name" was called a **girder**. That word came from a mermaid diagram whose nodes grew denser and faster left to right — and the *shape* got named instead of the *phenomenon*. It was then used as a concept word across an artifact and five exchanges before an outside reader said it did not mean anything to them either.
+
+It is retired. The name was already in the code as `CitizenRecord.discontinuities`, with a precise definition: a stored thing changed meaning on a date. One name per meaning; the surplus one is swept.
+
+**This is entry 23's defect with a person in the model's place.** There, `branch threshold` and `Coverage` were adjacent rows in a table and the model welded them into "branch coverage," a measurement this system does not take. Here, density in a rendering became a semantic category. **Adjacency and salience in a rendering are not evidence about meaning**, and that holds for readers as well as for models — which is the more uncomfortable half, because every technique on this page assumes the reader is the reliable instrument.
+
+The instrument survives the word: *a diagram that grows denser toward its terminus is a diagram of something that is not terminating.*
+
+
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
 
 **Three** of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that catches a comment disagreeing with itself — and it caught one again on the day entry 12 was written. Wiring the real test tallies in put a truthful line reading *"0 passed, 11 in a pre-success state"* directly above a section that said *"Nothing in these readings raised one."* Both sentences were true of their own inputs, because the velocity engine has never been shown a pass/fail count. The pair was nonsense, no assertion could see it, and one read of the rendered comment could not miss it.

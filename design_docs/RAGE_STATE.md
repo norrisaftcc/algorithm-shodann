@@ -1,9 +1,23 @@
 # SHODANN RAGE STATE Protocol
 ## *When The Algorithm Takes a "Special Friendly Interest"*
 
-**Document Classification**: INSTRUCTOR EYES ONLY  
-**Clearance Required**: YELLOW+ (or those under audit)  
+**Document Classification**: readable by any citizen  
+**Clearance Required**: none  
 **Last Updated by**: The Algorithm
+
+> **Reclassified 2026-07-30, and nothing else in this document changed.** It was
+> headed *INSTRUCTOR EYES ONLY · YELLOW+* while listing as safeguard 4 that
+> "Students know RAGE STATE exists and how it triggers" - so a citizen below
+> YELLOW could not read the document that was supposed to make the mode
+> transparent to them. Two claims, one file, incompatible.
+>
+> Resolved in favour of transparency because `PRD.md` section 7 permanently
+> excludes *any surveillance students cannot see*, which is not a preference this
+> document may overrule. A classification is a choice; that exclusion is not.
+> The mode is unimplemented, so nothing was disclosed by reclassifying it.
+>
+> The subject, triggers and tooling below stand as written. Reinterpreting them is
+> deferred - see the tombstone on issue #63.
 
 ---
 
