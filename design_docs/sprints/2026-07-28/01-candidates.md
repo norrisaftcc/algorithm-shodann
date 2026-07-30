@@ -34,6 +34,7 @@ stays the artifact it is and the question "is this done?" has one answer.
 | S1-16, S1-17, S1-39 | the ledger rung — **annotated, not corrected**; the figures stand and `discontinuities` records where the seams are |
 | S1-12, S1-14 | the METRICS.md rung — the producer, and the consent default it would otherwise have weaponised |
 | S1-45 | the review rung — the rules behind the style count now reach the prose, which is where `read_lint_issues` always said they belonged |
+| S1-28 | the review rung, commit `1191ca5` — `with_config` and `tune` swept rather than wired up |
 | S1-30 | superseded by #56's platform matrix |
 
 **S1-44 is closed on the leaderboard only.** A seamed figure is now marked and
@@ -46,10 +47,26 @@ footnote at and the answer there is probably to say less, not to annotate more.
 **Declined by decision**, not left open: S1-09a (INFRARED as the default band).
 #59 decided everyone starts at RED, and the reasoning is in that commit.
 
-Everything else is open. **S1-42, S1-43 and S1-44 were filed by the ledger rung
-itself** and are new since the survey — two of them found by adversarially
-reverting that rung's own guards, one by grepping the prompt for a claim after
-changing what the claim described.
+Everything else is open. **The survey itself is S1-01 to S1-37. Everything from
+S1-38 on was filed by the rungs that closed the items above it** — 46 rows in
+the tables now, nine of them post-survey. S1-42, S1-43 and S1-44 came from the
+ledger rung, two by adversarially reverting that rung's own guards and one by
+grepping the prompt for a claim after changing what the claim described; S1-45
+came from reading a rendered review against the command this repository
+documents; S1-46 from noticing that a *closure* moved the score.
+
+**S1-46 is a record, not a task.** It is the only row in Measurement integrity
+where no instrument is wrong, so there is nothing to repair; what it needs is a
+decision before cohort 1 starts, after which the freeze makes the decision for
+us. Do not pick it up as a fix.
+
+**Two items were confirmed still open while writing this**, against the
+temptation to assume recent work closed them: `S1-29` (`build_context`'s
+docstring at `prompts.py:219` still describes the "not instrumented" phrasing
+that the inline comment 37 lines below it says was tried and abandoned) and
+`S1-35` (`prompts/01`'s reference table still documents the same abandoned
+behaviour). `review.py:115` carries a third copy. Checked, not fixed — the
+scope that closed these lines' neighbours did not include them.
 
 ---
 
@@ -62,6 +79,7 @@ changing what the claim described.
 | S1-03 | `collect_metrics` sets `complexity = functions`. The stored "cyclomatic complexity" is a count of `def `. Nothing ever reads a `C901` diagnostic, so the frozen ruff pin protects a number that is not computed. | `review.py:126` | ledger | M |
 | S1-04 | `pytest-cov` is unpinned and absent from dev extras, while ruff beside it is pinned exactly *because* it feeds the score. Coverage is the heavier input. | `shodann.yml:85`, `pyproject.toml:14` | ledger | S |
 | S1-05 | **No test pins `first_test_bonus`.** Surveyor changed it 1.0 → 0.05 and all 247 tests passed. US-1.3's curve can be flattened silently, and the damage bakes into every baseline. | `test_velocity_contracts.py:89` | ledger | S |
+| S1-46 | **Deleting untested code raises coverage, so deletion scores like testing and costs less.** Coverage is a ratio and the 2.0-weighted term; removing the untested lines moves it exactly as adding tests would. Observed on this repository — the `S1-28` sweep of `with_config`/`tune` raised coverage, and the review of that push read the deletion as evidence of more testable code. Unlike every other row in this section **nothing computes a wrong number**: it is a property of the metric, not a bug in an instrument, which is why it is recorded rather than repaired. Every honest fix (weighting deletions, or passing a line count beside the ratio) changes what coverage means, and `PRD.md` §8 forbids that after cohort 1's first submission — so this is decided **before** the cohort starts or it stands for the cohort. `EARLY_RUNS.md` 23 rules out the second-figure option on its own: never hand the model another number for a quantity the first one already covers. | `velocity.py`, `shodann.yml` analyse job | ledger | M |
 | S1-40 | **A citizen can ship us their own coverage figure, and it counts.** Nothing deletes the report files before the tools write them. `> ruff.json` truncates, so ruff was safe; coverage was not — the step ends in `test -f coverage.json \|\| echo '{}'`, a guard for pytest-cov writing nothing. Commit a `coverage.json` claiming 97% and break your own test collection: pytest-cov writes nothing, the guard finds the committed file and leaves it, and it rides the artifact into the 2.0-weighted term. **Reproduced end to end 2026-07-29** before the fix. Same family as S1-01 and S1-02. | `shodann.yml`, analyse job | ledger | S |
 
 ## The model is being fed zeros as if they were measurements

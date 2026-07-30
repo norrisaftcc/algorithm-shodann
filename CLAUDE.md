@@ -10,21 +10,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `src/shodann/` — the implementation. Velocity engine, prompt assembly, output validator, groundedness probe, clearance calibration, capability declaration, citizen ledger.
 - `.github/workflows/shodann.yml` — live, two jobs, posts a comment on every PR to this repo.
-- `tests/` — 249 tests, including golden tests against the JS oracle and contract tests that read the workflow YAML as text.
-- `design_docs/sprints/2026-07-28/` — one sprint, documented end to end: `01-candidates.md` (37 surveyed items, the live backlog), `02-prediction.md`, `03-treatment.md`, `04-retro.md`, `05-assay.md`.
+- `tests/` — 467 tests, including golden tests against the JS oracle, contract tests that read the workflow YAML as text, and groundedness probes that read the assembled output. One test is skipped on purpose (`reduced_allocation` is not synthesised); any other skip is a bug — see the guard rule in Landmines.
+- `design_docs/sprints/2026-07-28/` — one sprint, documented end to end: `01-candidates.md` (the live backlog — 37 surveyed items plus nine filed since, and a Closure section that is the only place recording which are done), `02-prediction.md`, `03-treatment.md`, `04-retro.md`, `05-assay.md`.
 - `.claude/skills/the-algorithm/` — a vendored discipline, pinned by commit. **Never edited here.** See `design_docs/addenda/the-algorithm.md`.
 - `design_docs/growth-velocity.js` — the **reference oracle**, not the runtime. Kept so the port stays checkable. Do not extend it.
 - `design_docs/shodann-core.yml` — the historical 5-job draft. Never deployed, unsafe as written (see Landmines 1). Read it for the literal tool invocations; do not copy it.
 
 `README.md` is in-persona satire with no product content — never mine it for requirements.
 
-**`design_docs/EARLY_RUNS.md` is the highest-value file in the repo for a new session.** Twenty-five defects found by running the system, every one of which the test suite was green through. Read it before trusting that a passing suite means the thing works — entry 13 is a guard whose own test passed with the guard deleted, and entry 15 is a defect that made synthesis impossible for every citizen while the fallback told a fluent story about it. **Entries 17-24 are one sequence and the closing table is the point**: eleven reviews of one pull request, eight defect classes, and every class fixed with a *probe* held on the next run while every class fixed with *prose alone* came back. **Three of the eleven rounds found a defect caused by the previous round's fix** - none visible in the diff - so read the output after every fix rather than after the last one. Two of those were extra numbers handed to the model beside a number it already had: never supply a second figure for a quantity the first one already covers.
+**`design_docs/EARLY_RUNS.md` is the highest-value file in the repo for a new session.** Twenty-five defects found by running the system, every one of which the test suite was green through. Read it before trusting that a passing suite means the thing works — entry 13 is a guard whose own test passed with the guard deleted, and entry 15 is a defect that made synthesis impossible for every citizen while the fallback told a fluent story about it. **Entries 17-24 are one sequence and the closing table is the point**: fourteen reviews of one pull request, eight defect classes, and every class fixed with a *probe* held on the next run while every class fixed with *prose alone* came back. **Three of the first eleven rounds found a defect caused by the previous round's fix** - none visible in the diff - so read the output after every fix rather than after the last one. Two of those were extra numbers handed to the model beside a number it already had: never supply a second figure for a quantity the first one already covers.
 
 **Addenda live in `design_docs/addenda/` and are linked from here.** This file has almost no slack — an assay found 161 of 190 sentences load-bearing, so a reader who skims loses instructions rather than filler. Put detail in an addendum and name it here. An unlinked addendum does not exist.
 
 | Addendum | Read it before |
 |---|---|
 | `design_docs/addenda/the-algorithm.md` | writing any plan or document a later session will act on |
+| `design_docs/addenda/accumulation.md` | committing a second change before reading the first one's output |
 
 ### Source precedence when documents disagree
 
@@ -132,7 +133,11 @@ Drop either guard and you get a penalty for reducing complexity, or `sqrt(negati
 
 **Weights, thresholds, and curve shape are explicitly tunable** — the owner expects them to change as real submissions come in. What is *not* negotiable is the behavioral contract: iteration can never subtract, no branch is punitive, and improvement outranks position.
 
-Two PRD invariants the code does **not** satisfy — open design questions, not transcription work: (a) US-1.3 says a first test (0→n%) must outweigh an equal later gain (50→50+n%), but coverage delta is applied linearly, so they score identically, and no code path ever emits the required phrase "First tests are hardest tests"; (b) "coverage delta > 0 ⇒ score increases" cannot hold — the function never reads the previous score, and a coverage gain paired with a test-count drop scores lower. Fixing (a) means changing the curve, which is sanctioned.
+**US-1.3 shipped** — a first test (0→n%) does outweigh an equal later gain (50→50+n%). `_coverage_multiplier` (`velocity.py:131`) scales the coverage term by remaining headroom, `FIRST_TESTS_PHRASE` (`:34`) carries the wording the PRD requires, and `ORACLE_CONFIG` sets `first_test_bonus` to 0 so the golden tests still reproduce the JS's flat curve. No test pinned the bonus until S1-05; changing it silently flattens the curve into every baseline.
+
+**One PRD invariant the code still does not satisfy**, an open design question rather than transcription work: "coverage delta > 0 ⇒ score increases" cannot hold, because the function never reads the previous score and a coverage gain paired with a test-count drop scores lower.
+
+**A property of the coverage term, recorded and not fixed** (`S1-46`, `EARLY_RUNS.md` 25): coverage is a ratio, so *deleting* untested code raises it exactly as testing it would — and coverage is the 2.0-weighted term. Nothing computes a wrong number; every honest correction changes what coverage means, which §8's freeze forbids after cohort 1's first submission. Decide it before the cohort or it stands for the cohort.
 
 ## Prompt assembly
 
@@ -219,8 +224,10 @@ Four more, learned from running it:
 | Question | File |
 |---|---|
 | **What broke when it ran, and why** | `design_docs/EARLY_RUNS.md` |
-| **The live backlog — 37 surveyed items** | `design_docs/sprints/2026-07-28/01-candidates.md` |
+| **The live backlog — 46 items, and which are closed** | `design_docs/sprints/2026-07-28/01-candidates.md` |
 | How this repo negotiates, and the floor test | `design_docs/addenda/the-algorithm.md` |
+| Why correct changes still compound into a problem | `design_docs/addenda/accumulation.md` |
+| What a second repository would need to subscribe (it cannot today) | `design_docs/ONBOARDING_A_REPOSITORY.md` |
 | Which documents are below floor, and where their operative sentences sit | `design_docs/sprints/2026-07-28/05-assay.md` |
 | Velocity math as shipped, guards, US-1.3 | `src/shodann/velocity.py` |
 | Citizen ledger, clearance names, atomic writes | `src/shodann/state.py` |

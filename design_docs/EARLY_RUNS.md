@@ -386,9 +386,11 @@ It was quoting us, faithfully, and it had no way to know better — the prompt i
 
 Fixed in the prompt. The general form is worth carrying: **before blaming a model for a claim, grep the prompt for it.**
 
-## 17-22. Eight reviews of one pull request, six classes, and what separated the fixes that held
+## 17-24. Fourteen reviews of one pull request, eight classes, and what separated the fixes that held
 
-**Where:** PR #61, the ledger and METRICS.md rungs. SHODANN reviewed its own pull request eight times as commits landed. Every review was audited against the tools; every figure was exact in all eight. Six defect classes came out, none of them visible to a suite that went 372 → 433 green throughout.
+**Where:** PR #61, the ledger and METRICS.md rungs. SHODANN reviewed its own pull request fourteen times as commits landed, and every review was audited against the tools — no figure was ever wrong. Eight defect classes came out, numbered 17 to 24 below, none of them visible to a suite that went 372 → 467 green throughout.
+
+**The counts inside this entry are snapshots and say so.** Sections written at round eight say "eight reviews"; the closing paragraph says "eleven runs". Both were accurate when written and neither was revised, because a running count that gets quietly restated loses the only thing it was recording — that the loop kept going after each point somebody thought it had stopped.
 
 Recorded as one entry because the individual defects matter less than what the sequence showed about fixing them.
 
@@ -473,14 +475,14 @@ The prose forbidding exactly this shipped **in the same commit that caused it** 
 
 **Three of eleven rounds produced a defect caused by the previous round's fix** — the subtraction that replaced the streak figure, the word "branch" that came from renaming the complexity row, and both halves of this one. None was visible in the diff. All three needed the next run, which is the argument for reading the output after every fix rather than after the last one.
 
-**The eighth review was clean, and the ninth was not.** All four probes returned empty against round eight, all six classes stayed fixed, and it was the first of the nine with no finding — then round nine produced entry 23. The honest summary is that this loop has not been observed to go dry: the longest clean streak is one run, and the first round that *looked* like convergence was round five, whose single finding turned out to be a fix no run had tested yet. Eleven runs, eight classes, and a defect rate still above zero. Rounds 8 and 10 were clean; 9 and 11 were not.
+**The eighth review was clean, and the ninth was not.** All four probes returned empty against round eight, all six classes stayed fixed, and it was the first of the nine with no finding — then round nine produced entry 23. The honest summary is that this loop has not been observed to go dry: the longest clean streak is one run, and the first round that *looked* like convergence was round five, whose single finding turned out to be a fix no run had tested yet. Eleven runs, eight classes, and a defect rate still above zero. Rounds 8 and 10 were clean; 9 and 11 were not. Rounds 12 to 15 followed and are counted in entry 25; the only finding out of them is recorded there as `S1-46`, because it is not a defect in an instrument.
 
 
 ## 25. The loop accelerated, and the acceleration was the only reliable signal
 
 **Where:** PR #61, measured across all 23 commits after the fact rather than noticed during them.
 
-Fourteen review rounds produced eleven defect classes. That much was already recorded. What was not recorded is the shape of the rate, and the rate is the finding.
+Fourteen review rounds produced the eight defect classes recorded as entry 17-24. That much was already recorded. What was not recorded is the shape of the rate, and the rate is the finding.
 
 **Interval between commits, in order:**
 
@@ -536,6 +538,14 @@ It is retired. The name was already in the code as `CitizenRecord.discontinuitie
 **This is entry 23's defect with a person in the model's place.** There, `branch threshold` and `Coverage` were adjacent rows in a table and the model welded them into "branch coverage," a measurement this system does not take. Here, density in a rendering became a semantic category. **Adjacency and salience in a rendering are not evidence about meaning**, and that holds for readers as well as for models — which is the more uncomfortable half, because every technique on this page assumes the reader is the reliable instrument.
 
 The instrument survives the word: *a diagram that grows denser toward its terminus is a diagram of something that is not terminating.*
+
+### The cheapest way to raise coverage is to delete code
+
+One commit in this sequence swept `with_config` and `tune` from `velocity.py` — dead code, S1-28, uncontroversial. Coverage went up, because coverage is a ratio and the deleted lines were the untested ones. The review of that push read the deletion as evidence of writing more testable code.
+
+Coverage is the 2.0-weighted term, the heaviest input to velocity. So the incentive stands as measured: **deleting an untested function scores like testing it, and costs less.** A citizen who cannot get a hard function under test can delete it instead and the score improves either way.
+
+This is not a defect in an instrument, which is what separates it from every other entry on this page. Nothing computed a wrong number; the ratio is the ratio. It is a property of the metric, and it lands on the clock `PRD.md` §8 sets — adding a signal stays legal mid-cohort, **changing coverage's meaning does not**, so this is either decided before cohort 1's first submission or it stands for the cohort. Filed as `S1-46` and deliberately not fixed: the honest options (weight deletions, or read a line count beside the ratio) all change a frozen signal, and entry 23 is the standing warning about handing a model a second figure for a quantity the first one already covers.
 
 
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
