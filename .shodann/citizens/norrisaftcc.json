@@ -67,5 +67,32 @@
     }
   ],
   "last_degradation": "no model configured",
-  "coverage_instrumented": true
+  "coverage_instrumented": true,
+  "discontinuities": [
+    {
+      "date": "2026-07-25T23:08:59Z",
+      "fields": [
+        "pr_count",
+        "iteration_streak"
+      ],
+      "kind": "counting_change",
+      "note": "S1-16, S1-38. These two counters have counted write events, not merges to main, for the whole of this record. Before the --dry-run split (EARLY_RUNS 7) the ledger was written on every push, and a stacked pull request still writes it twice - #58 merged into #56's branch on 2026-07-28 and recorded a cycle for work that landed once. The stored 19 is therefore roughly 7 actual merges. Not corrected: the figures are the true record of what the instrument did, and editing a stored metric to what it should have been is the one edit this repository refuses (EARLY_RUNS 1). Read neither number as a merge count at any date up to and including this record's last_updated."
+    },
+    {
+      "date": "2026-07-26T01:42:46Z",
+      "fields": [
+        "velocity_history"
+      ],
+      "kind": "defect_residue",
+      "note": "S1-17. The 410.0 entry at this timestamp is residue of the absent-vs-zero defect (EARLY_RUNS 9): an unmeasured coverage reading reached the engine as 0.0, so the next measured reading scored as a ~98-point gain that nobody earned. Left in place. Any trend, average or delta whose window includes this timestamp is inflated by it - compute_trend over the three entries around it reads descending, and the same three without it read ascending."
+    },
+    {
+      "date": "2026-07-29T00:00:00Z",
+      "fields": [
+        "last_metrics.complexity"
+      ],
+      "kind": "unit_change",
+      "note": "S1-39, following S1-03. complexity changed units on this date without changing name: a `def ` count before, a ruff C901 count after. The stored 0 is a C901 count sitting on a history of def counts, so any delta spanning this date subtracts two different quantities. Nothing punitive follows, because the composite score no longer reads this field, but it is not comparable across this seam and must not be plotted as one series."
+    }
+  ]
 }

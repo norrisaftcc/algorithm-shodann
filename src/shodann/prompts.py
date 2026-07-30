@@ -46,6 +46,7 @@ __all__ = [
     "UnsupportedTemplateSyntax",
     "build_context",
     "describe_history",
+    "describe_style_rules",
     "extract_template",
     "find_pseudo_syntax",
     "render_prompt",
@@ -268,9 +269,31 @@ def build_context(
         "CLEARANCE_NAME": clearance_name(record.clearance_level),
         "CLEARANCE_NUMBER": record.clearance_level,
         "CURRENT_WEEK": current_week,
+        # Arrives *post*-increment: `review()` does `record.pr_count += 1` before
+        # calling here, so this is the number of the submission being reviewed,
+        # not a count of the ones before it. `PREV_STREAK` on the next line is
+        # the opposite - stored, un-incremented, genuinely prior.
+        #
+        # Harmless until S1-23 made the two counters count the same events, at
+        # which point the prompt was handing the model two aliases one apart and
+        # template 01 labelled the post-increment one "Previous Submissions".
+        # SHODANN reviewed PR #61 and reported both faithfully: "your 20th
+        # submission" and "This is your 19th consecutive submission recorded",
+        # in one paragraph. The model was right twice and the comment still
+        # contradicted itself, which is a labelling defect and not a model one.
+        # Renaming the row rather than changing either value: 20 really is the
+        # submission number, 19 really is the prior streak, and both are true
+        # once each says which it is.
         "PR_COUNT": record.pr_count,
         "COVERAGE_INSTRUMENTED": reports.coverage_instrumented,
         "PREV_COVERAGE": previous_coverage,
+        # Retained as a context key with no template consumer, deliberately.
+        # No template renders it any more (S1-42: it is `PR_COUNT - 1` for
+        # every ledger this system writes, and three reviews reported both
+        # numbers as two facts). Kept so `build_context`'s output stays a
+        # superset of what any template might ask for, rather than removed
+        # and re-derived by whoever next wants a streak - the value is
+        # correct, it is only unfit to hand a model beside `PR_COUNT`.
         "PREV_STREAK": record.iteration_streak,
         "PR_TITLE": pr_title,
         "FILES_CHANGED": files_changed,
@@ -281,6 +304,7 @@ def build_context(
         "SYNTAX_REPORT": _syntax_report(reports),
         "SYNTAX_MEASURED": reports.syntax_errors is not None,
         "SYNTAX_ERRORS": reports.syntax_errors,
+        "STYLE_RULES": describe_style_rules(reports),
         "STYLE_REPORT": _style_report(reports),
         "STYLE_MEASURED": reports.lint_issues is not None,
         "STYLE_ISSUE_COUNT": reports.lint_issues,
@@ -352,16 +376,75 @@ def _syntax_report(reports: AnalysisReports) -> str:
     return "Every file parsed."
 
 
+def describe_style_rules(reports: AnalysisReports) -> str:
+    """The rules behind the style count, or a refusal to characterise it.
+
+    S1-45. The count alone made the model guess what was in it - categories, then
+    a fixable count, then a command that shows the citizen nothing. Naming the
+    rules is what makes the number reproducible: a citizen handed `RUF100` can
+    look it up or select it, where a citizen handed "23" and their own clean
+    `ruff check` has nothing to act on.
+
+    The absent case is a refusal rather than an empty list, for the same reason
+    every other reading here has one. "No breakdown available" invites the model
+    to supply one.
+    """
+    if reports.style_breakdown is None:
+        return (
+            "The rules behind this count were not recorded. Do not name, guess or "
+            "illustrate a rule or category, and do not say which kind of issue these are."
+        )
+    if not reports.style_breakdown:
+        return "No diagnostics, so no rules to report."
+
+    rules = ", ".join(f"`{code}` x{count}" for code, count in reports.style_breakdown)
+    # Qualitative, never a count. `style_fixable` is a real reading and it is
+    # deliberately not rendered: it sits two lines from the total, the two are
+    # within one of each other, and a model handed two adjacent figures for
+    # related quantities welds them - which is exactly what happened, and is
+    # EARLY_RUNS 18's class with different numbers in it.
+    fixable = (
+        " Most of these are mechanical rather than judgement calls."
+        if reports.style_fixable
+        else ""
+    )
+    return (
+        f"Most frequent rules: {rules}.{fixable} Name only these rules; there may "
+        "be others in the count and you have not been shown them. **State no "
+        "second count.** There is one number here, the total above; how many are "
+        "auto-fixable is not yours to state and no arithmetic on the total is "
+        "either.\n\n"
+        "**No command clears this reading.** It is taken with the citizen's own "
+        "lint configuration ignored, so their `ruff check` selects different "
+        "rules and their `--fix` resolves a different set. Name a rule so they "
+        "can look it up; never name a command and say it will clear, fix or "
+        "resolve these diagnostics, and never estimate how long that would take."
+    )
+
+
 def describe_history(record: CitizenRecord, result: VelocityResult) -> str:
-    """One or two sentences of context for the model. Facts only, no framing."""
+    """One or two sentences of context for the model. Facts only, no framing.
+
+    No streak figure, and it took three commits to get here. `iteration_streak`
+    equals `pr_count` for every ledger this system writes (S1-42), so handing
+    both over gives the model two numbers for one quantity one apart - and it
+    reliably reports both. The DATA-table row lost its number, then lost the
+    subtraction that replaced it, and the contradiction survived anyway because
+    the *same figure* was still arriving here. One answer in two places, which is
+    the failure this file's own comments keep naming.
+
+    The trend stays: `velocity_trend` is a genuinely separate reading, computed by
+    `compute_trend` over the newest three history entries, and nothing else in
+    the prompt carries it.
+    """
     if result.is_first_submission or record.pr_count <= 1:
         return (
             "This is the citizen's first submission. No previous metrics exist, "
             "so every delta is measured against a zero baseline."
         )
     return (
-        f"Submission number {record.pr_count}. Velocity trend: "
-        f"{record.velocity_trend.upper()}. Iteration streak: {record.iteration_streak}."
+        f"Submission number {record.pr_count}. "
+        f"Velocity trend: {record.velocity_trend.upper()}."
     )
 
 

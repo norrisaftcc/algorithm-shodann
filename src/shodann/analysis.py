@@ -33,6 +33,7 @@ __all__ = [
     "read_complexity",
     "read_coverage",
     "read_lint_issues",
+    "read_style_breakdown",
     "read_syntax_errors",
     "read_test_outcomes",
 ]
@@ -90,6 +91,8 @@ class AnalysisReports:
 
     coverage: float | None = None
     lint_issues: int | None = None
+    style_breakdown: list[tuple[str, int]] | None = None
+    style_fixable: int | None = None
     complexity: int | None = None
     syntax_errors: int | None = None
     tests_passed: int | None = None
@@ -115,10 +118,13 @@ class AnalysisReports:
         """Read whichever reports are present in ``directory``."""
         base = Path(directory)
         lint_report = base / LINT_REPORT
+        breakdown = read_style_breakdown(lint_report)
         passed, failed = read_test_outcomes(base / TEST_REPORT)
         return cls(
             coverage=read_coverage(base / COVERAGE_REPORT),
             lint_issues=read_lint_issues(lint_report),
+            style_breakdown=(breakdown or (None, None))[0],
+            style_fixable=(breakdown or (None, None))[1],
             complexity=read_complexity(lint_report),
             syntax_errors=read_syntax_errors(lint_report),
             tests_passed=passed,
@@ -175,6 +181,56 @@ def read_lint_issues(path: Path | str) -> int | None:
     """
     diagnostics = _diagnostics(_load(path))
     return None if diagnostics is None else len(diagnostics)
+
+
+def read_style_breakdown(path: Path | str) -> tuple[list[tuple[str, int]], int] | None:
+    """Which rules the diagnostics are, and how many ruff can fix itself.
+
+    `read_lint_issues` above says rule-level feedback "belongs in the review's
+    prose, where it can be explained". That was the right destination and nothing
+    ever delivered to it: the prose received a bare total, so the model invented
+    the missing half. Across five of ten reviews of PR #61 it guessed the
+    categories ("likely spacing or naming conventions" - they are `RUF100`,
+    `ISC004` and `C408`), guessed the fixable count ("clear the 20 in one pass"
+    when ruff reported 11 of 20 fixable), and told the citizen to run a check that
+    shows them nothing. S1-45.
+
+    The data was never missing. `ruff.json` carries `code` and `fix` on every
+    diagnostic and this module parsed the file to call `len()` on it.
+
+    **Not a score change.** `lint_issues` is a frozen input feeding the sqrt term
+    and is untouched; these are descriptive fields beside it, never read by
+    `calculate_velocity`. PRD section 8 permits adding a signal and forbids
+    changing one, and this does not even add a signal - it adds an explanation of
+    one already taken.
+
+    Returns ``(top rules newest-first by frequency, fixable count)``, or ``None``
+    when ruff did not run - the same absent-is-not-zero contract as its siblings.
+    """
+    diagnostics = _diagnostics(_load(path))
+    if diagnostics is None:
+        return None
+    tally: dict[str, int] = {}
+    fixable = 0
+    for item in diagnostics:
+        if not isinstance(item, dict):
+            continue
+        code = item.get("code")
+        if isinstance(code, str) and code:
+            tally[code] = tally.get(code, 0) + 1
+        if item.get("fix"):
+            fixable += 1
+    ranked = sorted(tally.items(), key=lambda pair: (-pair[1], pair[0]))
+    return ranked[:STYLE_RULES_SHOWN], fixable
+
+
+STYLE_RULES_SHOWN = 4
+"""How many rules reach the prompt.
+
+Enough to name a pattern, few enough that the model cannot present the list as
+the whole of the citizen's work. The recommended iteration asks for one category;
+four gives it something to choose from without turning a review into a report.
+"""
 
 
 def _diagnostics(data) -> list | None:

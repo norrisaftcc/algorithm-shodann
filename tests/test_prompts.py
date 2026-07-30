@@ -179,8 +179,10 @@ def test_uninstrumented_coverage_says_so_rather_than_reporting_zero() -> None:
     assert "Coverage was not measured this cycle." in rendered
     assert "Do not report, infer, or celebrate" in rendered
 
-    # The complexity row must survive the branch it shares a table with.
-    assert "**Complexity**" in rendered
+    # The complexity row must survive the branch it shares a table with. Named
+    # by its unit since a model read a bare "0" as "not measured" - see
+    # test_a_measured_zero_is_not_reported_as_an_absent_reading.
+    assert "**Functions over the branch threshold**" in rendered
 
     # The prime directive's "0% to 30%" is illustrative prose, not a reading,
     # and must survive untouched.
@@ -190,7 +192,9 @@ def test_uninstrumented_coverage_says_so_rather_than_reporting_zero() -> None:
 def test_instrumented_coverage_still_reports_normally() -> None:
     rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
 
-    assert "**Coverage**" in rendered
+    assert "**Line coverage**" in rendered, (
+        "the unit is part of the label - see the branch-coverage test"
+    )
     assert "Coverage was not measured" not in rendered
 
 
@@ -233,13 +237,29 @@ def test_every_bracketed_emoji_name_has_a_mapping() -> None:
     ["02_rage_state_addon.md", "04_first_submission_prompt.md", "05_edge_case_handlers.md"],
 )
 def test_templates_with_control_flow_fail_with_a_useful_message(template: str) -> None:
-    """These are out of scope for rung 1; the error must say why, not raise a Jinja trace."""
-    path = PROMPTS / template
-    if "TEMPLATE:BEGIN" not in path.read_text(encoding="utf-8"):
-        pytest.skip(f"{template} has no template markers yet")
+    """These are out of scope for rung 1; the error must say why, not raise a Jinja trace.
+
+    This test skipped all three of its cases for its entire life, so its assertion
+    had never once executed. The guard asked for `TEMPLATE:BEGIN`, no template
+    except `01` has ever carried those markers, and `pytest.skip` fired before
+    `pytest.raises` could. `sss` reads identically to `...` in a summary line.
+
+    EARLY_RUNS 13's class, found in a new place: a guard is a claim that something
+    would otherwise break, and this one never made the claim. Reverting the
+    production code would not have caught it either - the test was green against
+    nothing whatever you did to the code, because it never reached the code.
+
+    Fixed by testing the layer the intent was always about. `render_template_text`
+    takes text rather than a path, so the marker requirement - a different failure,
+    raised by `extract_template` for a different reason - stops standing in front
+    of the pseudo-syntax check. The input is each file's real content, which is
+    better than the fixture the old version never got to: 02 carries 4 pseudo-syntax
+    constructs, 04 carries 8, 05 carries 22.
+    """
+    text = (PROMPTS / template).read_text(encoding="utf-8")
 
     with pytest.raises(UnsupportedTemplateSyntax, match="control flow"):
-        render_prompt(sample_context(), template=template, prompts_dir=PROMPTS)
+        render_template_text(text, sample_context(), source=template)
 
 
 def test_the_error_names_the_conversion() -> None:
@@ -314,7 +334,7 @@ def test_coverage_still_reports_when_only_the_tests_went_unmeasured() -> None:
     """The two readings are independent, and one gap must not swallow the other."""
     rendered = render_prompt(sample_context(AnalysisReports(coverage=52.0)), prompts_dir=PROMPTS)
 
-    assert "**Coverage**" in rendered
+    assert "**Line coverage**" in rendered
     assert "Coverage was not measured" not in rendered
     assert "Test outcomes were not measured this cycle." in rendered
 
@@ -375,20 +395,236 @@ def test_the_prompt_forbids_connecting_two_instruments() -> None:
     assert "no targets, no predictions" in rendered
 
 
+def test_the_model_is_told_it_has_not_seen_the_code() -> None:
+    """The rule that was missing entirely, and the review that needed it.
+
+    SHODANN's third review of PR #61 recommended "examining whether your new
+    functions in METRICS.md have narrative explanations". METRICS.md is a
+    generated markdown leaderboard with no functions - and the model had less
+    than that sentence implies to work from, because this template supplies
+    `FILES_CHANGED` as a *count* and no file list at all. The only place the
+    name can have come from is `PR_TITLE`. A filename in a title became a file
+    with contents, then a file whose functions could be reviewed.
+
+    Nothing anywhere told the model it had not read the submission. The
+    groundedness block forbade inventing figures and causes and said nothing
+    about inventing *contents*, so this was not a rule being broken - it was a
+    rule that did not exist.
+
+    Asserted because the prose half of this fix had no guard when it was
+    written: deleting the paragraph left 418 tests green, which is EARLY_RUNS 13
+    exactly. `groundedness.constructs_claimed_in_data_files` covers the subset
+    that is mechanically checkable; this covers the instruction that covers the
+    rest.
+    """
+    rendered = " ".join(render_prompt(sample_context(), prompts_dir=PROMPTS).split())
+
+    assert "You have not seen this submission's code" in rendered
+    assert "no file list, no source, no diff" in rendered
+    assert "Do not describe the contents of a file" in rendered
+
+
 def test_the_streak_is_labelled_with_the_unit_it_actually_counts() -> None:
     """SHODANN said "your iteration streak of 18 commits" and was quoting us.
 
-    `save_citizen_history` increments `iteration_streak` once per submission
-    that scored above zero - consecutive *submissions*, never commits. The
-    prompt labelled it "commits", the model repeated the label faithfully, and
-    the citizen was told a number about their commit history that was really
-    about their submission history.
+    `save_citizen_history` increments `iteration_streak` once per recorded
+    submission - consecutive *submissions*, never commits. The prompt labelled
+    it "commits", the model repeated the label faithfully, and the citizen was
+    told a number about their commit history that was really about their
+    submission history.
 
     Worth its own test because of how nearly it was filed against the model.
     A mislabelled figure looks identical to a fabricated one from the outside,
     and the difference is entirely in whose text the label came from.
+
+    The label broke a second time, in the other half of the phrase, and by the
+    same mechanism. S1-23 made the increment unconditional - a refactoring PR
+    scoring below zero extends the streak, because no branch of this engine is
+    punitive - while the template still read "with positive velocity". This
+    test asserted that string and passed, so the suite was pinning the stale
+    wording in place: the fix for EARLY_RUNS 16 recreated EARLY_RUNS 16. Both
+    directions are asserted now, because a label is only checkable against the
+    rule it claims to describe.
     """
     rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
 
-    assert "consecutive submissions with positive velocity" in rendered
     assert "Iteration Streak** | 2 commits" not in rendered
+    assert "positive velocity" not in rendered, (
+        "S1-23: the streak counts every submission, including one that scored below zero"
+    )
+    assert "whatever each scored" in rendered, "the sign-independence has to survive"
+
+
+def test_the_two_submission_counters_do_not_contradict_each_other() -> None:
+    """SHODANN reviewed PR #61 and said both of these, one paragraph apart:
+
+        "The Algorithm observes sustained momentum across your 20th submission"
+        "This is your 19th consecutive submission recorded."
+
+    Both were faithful to the prompt, which is what makes it ours. `review()`
+    increments `pr_count` before assembling the context, so `PR_COUNT` arrives
+    as the current submission's number while `PREV_STREAK` arrives as the
+    stored, un-incremented streak - and S1-23 had just made the two counters
+    count the same events, so template 01 was handing the model two aliases one
+    apart with the post-increment one labelled "Previous Submissions".
+
+    Neither value changed. Both rows now say which of the two they are, because
+    the numbers were right and only the labels were lying.
+    """
+    rendered = " ".join(render_prompt(sample_context(), prompts_dir=PROMPTS).split())
+
+    assert "Previous Submissions" not in rendered, (
+        "a post-increment count is not a count of previous submissions"
+    )
+    assert "Submission Number" in rendered
+    assert not re.search(r"Iteration Streak\*\* \| \d", rendered), (
+        "the streak row must carry no number of its own - see the docstring"
+    )
+    # And no arithmetic either. The first version of this fix replaced the
+    # duplicate figure with "This is Submission Number minus one, not a second
+    # figure to report" - which handed the model a calculation and a prohibition
+    # in one sentence. It did the calculation: the next review opened with
+    # "19 consecutive submissions" beside "20 submissions, 20 counted", the same
+    # contradiction restored from a subtraction rather than from a second row.
+    # An instruction not to report a number is not a way to avoid supplying one.
+    assert "minus one" not in rendered, "do not hand the model the subtraction"
+    assert "whatever each scored" in rendered, "the sign-independence still has to survive"
+
+
+def test_a_measured_zero_is_not_reported_as_an_absent_reading() -> None:
+    """The absent-vs-zero rule, running in the other direction.
+
+    Every guard for this so far has protected against an *absent* reading being
+    reported as a zero. SHODANN's fourth review of PR #61 did the reverse, and
+    nothing was watching that side:
+
+        "Zero complexity metrics recorded. As scope expands, the next level
+        involves understanding *where* complexity lives"
+
+    The reading was 0 and it was measured - a ruff `C901` count of zero means no
+    function exceeded the branch threshold, which is a good result and the best
+    available one. The citizen was told their complexity had not been captured
+    and sent to go and find it.
+
+    The row was labelled `**Complexity**` and carried a bare integer, and the
+    unit had changed under it in #58 from a count of `def ` to a count of
+    threshold violations. "Complexity: 0" invites exactly one reading from
+    anything that has not been told the unit. The row now names what it counts,
+    and the prompt states that a visible number is never a missing one - a
+    reading that was not taken has no row at all, which is the mechanism the
+    coverage, syntax, tests and style branches already use.
+    """
+    context = sample_context(
+        AnalysisReports(
+            coverage=97.6, lint_issues=20, complexity=0, syntax_errors=0,
+            tests_passed=419, tests_failed=0,
+        )
+    )
+    rendered = render_prompt(context, prompts_dir=PROMPTS)
+
+    assert "**Functions over the branch threshold**" in rendered, "a bare 'Complexity' has no unit"
+    assert "is a measurement and a good one" in rendered
+    assert "never describe a number you can see as missing" in rendered
+
+
+def test_no_streak_figure_reaches_the_model_from_anywhere() -> None:
+    """The whole prompt, not one row - which is why the first two fixes failed.
+
+    `iteration_streak` equals `pr_count` for every ledger this system writes
+    (S1-42), so any prompt carrying both hands the model two numbers for one
+    quantity, one apart. Three consecutive reviews reported both:
+
+        round 2  "your 20th submission" / "your 19th consecutive submission"
+        round 4  "Submission 20 lands"  / "This is your 19th consecutive submission"
+        round 7  "Across 20 submissions" / "across 19 consecutive submissions"
+
+    Round 2's fix relabelled the rows. Round 4's replaced the figure with "This
+    is Submission Number minus one", which handed over a subtraction instead of a
+    number, and the model did the subtraction. Round 7's contradiction survived
+    both because the *same figure* was still arriving through
+    `HISTORY_NARRATIVE`, which `describe_history` composed separately - one
+    answer in two places, found only by grepping the assembled prompt for the
+    number rather than the row.
+
+    Asserted over the rendered whole for that reason. A row-scoped assertion is
+    what let this run three times.
+    """
+    context = sample_context()
+    rendered = render_prompt(context, prompts_dir=PROMPTS)
+    streak = context["PREV_STREAK"]
+
+    assert streak, "the fixture must carry a non-zero streak or this proves nothing"
+    assert f"streak: {streak}" not in rendered.lower()
+    assert "minus one" not in rendered, "nor a way to derive it"
+    # The trend is a genuinely separate reading and must survive.
+    assert "Velocity trend:" in rendered
+
+
+def test_the_style_rules_reach_the_model_instead_of_being_guessed() -> None:
+    """S1-45, at the layer where the guessing happened.
+
+    Handed "23 style diagnostics" and nothing else, the model supplied the rest
+    in five of ten reviews: categories it invented, a fixable count it invented,
+    and a command that shows the citizen nothing. The rules were in `ruff.json`
+    the whole time.
+    """
+    reports = AnalysisReports(
+        coverage=52.0, lint_issues=23, complexity=0, syntax_errors=0,
+        tests_passed=436, tests_failed=0,
+        style_breakdown=[("RUF100", 8), ("ISC004", 5), ("C408", 4)], style_fixable=22,
+    )
+    rendered = render_prompt(sample_context(reports), prompts_dir=PROMPTS)
+
+    assert "`RUF100` x8" in rendered
+    assert "Name only these rules" in rendered, "four rules are not the whole count"
+    assert "own lint configuration ignored" in rendered, (
+        "the citizen's own ruff check reports a different number and must not be promised one"
+    )
+    # The fixable *count* was here for one round and caused round 11's swapped
+    # figures; see test_the_style_section_hands_over_exactly_one_count.
+    assert "mechanical rather than judgement calls" in rendered
+
+
+def test_an_unrecorded_breakdown_refuses_rather_than_inviting_one() -> None:
+    """Absent is not zero here either, and the failure mode is specific: an
+    empty breakdown beside a real count is exactly the gap the model filled."""
+    reports = AnalysisReports(
+        coverage=52.0, lint_issues=23, complexity=0, syntax_errors=0,
+        tests_passed=436, tests_failed=0,
+    )
+    rendered = render_prompt(sample_context(reports), prompts_dir=PROMPTS)
+
+    assert "rules behind this count were not recorded" in rendered
+    assert "Do not name, guess or illustrate a rule" in rendered
+    assert "23 alignment opportunities" in rendered, "the count itself is still reported"
+
+
+def test_the_style_section_hands_over_exactly_one_count() -> None:
+    """Round 11, and the shape is EARLY_RUNS 18 with different numbers.
+
+    Round 10 rendered "23 alignment opportunities" and, two lines later, "22 of
+    them are fixable by the tool itself". The next review said "22 style
+    diagnostics identified; 22 of them fixable" in one bullet and "Those 23
+    diagnostics" in another - the total and the fixable count welded, then
+    swapped, inside one comment.
+
+    Two adjacent figures for related quantities get conflated. That was already
+    written down; supplying a second one anyway is why this test asserts on the
+    numbers present rather than on the sentence I meant to write.
+
+    The per-rule tallies stay, because `RUF100 x8` is unambiguously scoped to a
+    rule and cannot be mistaken for the total.
+    """
+    reports = AnalysisReports(
+        coverage=52.0, lint_issues=23, complexity=0, syntax_errors=0,
+        tests_passed=442, tests_failed=0,
+        style_breakdown=[("RUF100", 8), ("C408", 4)], style_fixable=22,
+    )
+    rendered = render_prompt(sample_context(reports), prompts_dir=PROMPTS)
+    section = rendered.split("**Style Issues**")[1].split("## Test")[0]
+
+    assert "22" not in section, "the fixable count must not be handed over as a figure"
+    assert "mechanical rather than judgement calls" in section, "its substance survives"
+    assert "State no second count" in section
+    assert "No command clears this reading" in section
+    assert "`RUF100` x8" in section, "per-rule tallies are scoped and stay"

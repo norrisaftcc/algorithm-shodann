@@ -386,6 +386,170 @@ It was quoting us, faithfully, and it had no way to know better — the prompt i
 
 Fixed in the prompt. The general form is worth carrying: **before blaming a model for a claim, grep the prompt for it.**
 
+## 17-24. Fourteen reviews of one pull request, eight classes, and what separated the fixes that held
+
+**Where:** PR #61, the ledger and METRICS.md rungs. SHODANN reviewed its own pull request fourteen times as commits landed, and every review was audited against the tools — no figure was ever wrong. Eight defect classes came out, numbered 17 to 24 below, none of them visible to a suite that went 372 → 467 green throughout.
+
+**The counts inside this entry are snapshots and say so.** Sections written at round eight say "eight reviews"; the closing paragraph says "eleven runs". Both were accurate when written and neither was revised, because a running count that gets quietly restated loses the only thing it was recording — that the loop kept going after each point somebody thought it had stopped.
+
+Recorded as one entry because the individual defects matter less than what the sequence showed about fixing them.
+
+**17. The score's composition, invented — twice in one comment, incompatibly.** Of twenty style diagnostics: *"would further increase your velocity score's **coverage** component"*, and three paragraphs later, of the same action, *"raise your velocity score's **lint** component"*. Style feeds the lint term and does not touch coverage.
+
+This is entry 16's fabrication **with the number removed**, which is why nothing caught it. Entry 16 built the percentage probe against *"gets you back to 98%+ coverage territory"* — the identical style-to-coverage mechanism — and that probe fires on the `98`. Verified against the posted text: `ungrounded_tokens` returned `[]`, `ungrounded_percentages` returned `[]`. Entry 16's own closing sentence predicted it: the figure probe catches every consequence of the causal error *that carries a number*.
+
+Fixed with a third probe, and the useful part is that it is **grounded in an absence**: no template names a component, term, weight, factor or multiplier of the composite — grep finds zero — so any such claim is ungrounded by construction and the check needs no model of the formula.
+
+**18. Two aliased counters presented as two facts.** *"your 20th submission"* and *"This is your 19th consecutive submission recorded"*, one paragraph apart, both faithful to the prompt. `review()` increments `pr_count` before `build_context`, so `PR_COUNT` is the current submission's number while `PREV_STREAK` is stored and prior — and S1-23, in the same pull request, had just made both counters count the same events. Took three attempts; see the closing note below, which is the real content of this entry.
+
+**19. Contents invented for a file that has none.** *"examining whether your new **functions in METRICS.md** have narrative explanations."* METRICS.md is a generated markdown leaderboard.
+
+The model had less to work from than that implies: template 01 supplies `FILES_CHANGED` as a *count* and no file list at all, so the name can only have come from `PR_TITLE`. A filename in a title became a file with contents, then a file whose functions could be reviewed. And **nothing anywhere told the model it had not read the submission** — the groundedness block forbade inventing figures and causes and said nothing about inventing contents. Not a rule being broken; a rule that did not exist.
+
+Again the shape this file had already named — *"it cannot catch a mislabelled figure... a number that really was in the prompt, under the wrong name"* — with a **filename** in that role, so the identifier probe saw a grounded token and passed.
+
+**20. A measured zero reported as a missing reading.** *"Zero complexity metrics recorded"*, followed by advice to go and understand where complexity lives. The reading was 0 and it was measured: a `C901` count of zero means no function exceeded the branch threshold, which is the best available result.
+
+**Every absent-versus-zero guard in this repository protects the other direction.** Nothing was watching this one. The row was labelled `**Complexity**` with a bare integer, and its unit had changed underneath in #58 from a count of `def ` to a count of threshold violations. The row now names what it counts, and the prompt states the rule the other branches already implement structurally: a reading that was not taken has no row at all, so a number you can see is never a missing one. That generalised on the next run — the model reported "zero compilation barriers" as the measurement it is.
+
+**21. A promotion mechanism, invented.** *"This is how citizens scale from ORANGE to higher clearance bands"*, and in an earlier review *"a skill that compounds as your clearance rises"*. The prompt supplies a band and instructs the model to calibrate to it, and says nowhere how a band is obtained.
+
+Not cosmetic. #59 *declined* `prompts/03`'s `INFER_CLEARANCE` rather than leaving it unimplemented, because a band inferred from readings is a second score and this product rests on improvement outranking position. A citizen told that iterating well raises their band has been handed exactly that second score, by the one voice they cannot check it against — and it contradicts the disclosure footer three paragraphs below.
+
+**22. A trend across nineteen submissions, from two data points.** *"you've sustained 97%+ coverage across 19 consecutive submissions."* The prompt carries one previous coverage figure and one current one, never a series. Removed by taking the streak figure out of the prompt (entry 18) — with nothing to attach it to, the claim has no material.
+
+---
+
+**What separated the fixes that held from the fixes that came back.** This is the entry.
+
+| Class | First fix | Held? |
+|---|---|---|
+| 17 score composition | probe | yes, rounds 2-8 |
+| 19 invented contents | prose **and** probe | yes, rounds 4-8 |
+| 21 clearance as earned | prose | **no** — recurred the next run |
+| 21 clearance as earned | probe | yes |
+| 20 measured zero | prose + a renamed row | yes, rounds 6-8 |
+| 18 two counters | template edit ×3 | **no, twice** |
+
+**Every class that got a probe held on the next run. Every class that got only prose came back.** Entry 16 stated this as a conclusion — *"prose instructions against a class are unfalsifiable by anything except the next run"* — and entry 21 is it happening to someone who had just read that sentence and cited it. `clearance.NOT_EARNED` was added at every band, verified present in the rendered prompt, and the very next review made the claim anyway.
+
+Prose is not useless — 19 and 20 held with it, and it is still the right thing to tell a model. It is that **prose is not a fix you can believe until a run has tested it**, and a probe is.
+
+Two more that cost more than they should have:
+
+**A guard scoped to your fix will pass while the defect runs.** Entry 18 took three attempts. The first relabelled the two rows. The second replaced the duplicate figure with *"This is Submission Number minus one, not a second figure to report"* — which handed the model a subtraction instead of a number, **and it did the subtraction**. The third found that the figure had never been only in that row: `describe_history` composed `Iteration streak: 19` separately into `HISTORY_NARRATIVE`, a sentence nobody had looked at. Both earlier guards were green while the defect was live, because both asserted on the row that had already been fixed. The guard now greps the **assembled prompt** for the number. One answer in two places, in the file whose own comments name that failure repeatedly.
+
+**A rule stated in the negative cannot be enforced by asking whether its words appear.** The attribution probe (17) checks its finding against the prompt, deliberately, so that supplying the score's composition would retire the rule by itself. Copying that design into the clearance probe would have **permanently disabled** it: the prompt now contains *"will raise their clearance"* in order to forbid it, so a prompt-relative check reads its own prohibition as a licence. That probe is unconditional, and there is a test pinning the reason.
+
+**S1-45, closed after ten runs and five instances.** Every reading handed to the model as a bare total gets its missing context invented. Twenty style diagnostics with no categories produced guessed categories (*"likely spacing or naming conventions"* — they are mostly `C408`), then a guessed fixable count (*"clear the 20 in one pass"* — ruff reports 11 of 20 as fixable), and the advice remains unfollowable because the count itself is not reproducible: the analyse job measures with `ruff check . --isolated --extend-select C90` and `python scripts/dev.py check` reports zero. The invention stopped once entry 19's rule landed; the unfollowability did not.
+
+I called this "plumbing" for five rounds and it was not. `ruff.json` carries `code` and `fix` on **every** diagnostic, and `analysis.py` parsed that file only to call `len()` on it — the breakdown the model kept guessing was in the artifact we already read. `read_style_breakdown` now passes the top four rules and the fixable count through, and `read_lint_issues`' own docstring had named the destination from the day it was written: rule-level feedback *"belongs in the review's prose, where it can be explained."* The destination was named and nothing delivered to it.
+
+Legal mid-cohort, and the reason matters: `lint_issues` is untouched. PRD section 8 permits adding a signal and forbids changing one, and this adds no signal at all — it explains a reading already taken. A test pins the count against the breakdown for exactly that.
+
+**The deferral is the lesson, not the fix.** Five rounds of writing "structural, not a wording change, so it stays filed" was a judgement made once and then repeated without being re-checked, while the evidence for it being small accumulated in front of me. Sorting work by how expensive it *sounds* is how a two-hour item survives ten reviews.
+
+**23. A kind of coverage nobody measured.** Round nine, after a clean round eight.
+
+> *"maintaining this level while adding 2338 lines means some new code paths exist without **branch coverage**. Next iteration could explore whether any of those paths are testable"*
+
+The analyse job runs `pytest --cov=src --cov-report=json` with no `--cov-branch`, so **line** coverage is the only coverage this system has ever produced. There is no branch reading to maintain, no paths to enumerate, and nothing for the citizen to open.
+
+Entry 19's class in a new place — a real word from the prompt attached to a thing the prompt does not contain — and **the word came from us.** The complexity row was renamed *"Functions over the branch threshold"* one commit earlier, for entry 20, which put "branch" directly beneath two rows labelled only "Coverage" for a model to weld together.
+
+**The fix is a label, and the freeze is the reason it has to be.** Adding `--cov-branch` would make the sentence true and is not available: PRD section 8 freezes score inputs for cohort 1, coverage is the 2.0-weighted term, and replacing line coverage with branch coverage *changes* an existing signal rather than adding one — every stored baseline would silently start meaning something else. So the rows carry their unit, the prompt states which kinds do not exist, and a probe holds it.
+
+**Two of the nine rounds produced a defect caused by the previous round's fix**: round 4's "Submission Number minus one" handed the model a subtraction it performed, and round 4's rename supplied the word "branch". Neither was findable by reading the diff — both needed the next run. That is the argument for reading the output after *every* fix rather than after the last one.
+
+**24. The fix for S1-45 caused two defects in one review.** Round eleven, immediately after entry 23's sibling landed.
+
+> *"22 style diagnostics identified; **22 of them fixable** by automated tools (RUF100, ISC004, C408, I001)"* ... and in the next section, *"Those **23** diagnostics are noise between you and shipping."*
+
+The total and the fixable count, welded and then swapped, inside one comment. Round ten rendered `23 alignment opportunities` and two lines later `22 of them are fixable by the tool itself` — **two adjacent figures for related quantities, which entry 18 had already established get conflated.** Supplying a second number anyway, in the commit citing entry 18, is the finding. Fixability is now qualitative: *"most of these are mechanical rather than judgement calls"*, plus an explicit "state no second count".
+
+> *"The Algorithm suggests running `ruff check --fix` to **clear these** in your next iteration — it's a 5-minute win."*
+
+Worse than the defect it replaced, because that one was vague and this is specific. **No command clears this reading**: the count is taken with `--isolated`, so the citizen's `ruff check` selects different rules and their `--fix` resolves a different set. They run it, watch something else happen, and cannot tell whether they succeeded.
+
+The prose forbidding exactly this shipped **in the same commit that caused it** — *"if you suggest running a tool, name the rule rather than promising a count"* — and lost on its first run. Fourth time in this sequence that prose alone did not hold, and the fourth time a probe was what it needed. The probe is sentence-scoped: naming `--fix` is legitimate, and so is calling a rule mechanical; one sentence doing both is not.
+
+**Three of eleven rounds produced a defect caused by the previous round's fix** — the subtraction that replaced the streak figure, the word "branch" that came from renaming the complexity row, and both halves of this one. None was visible in the diff. All three needed the next run, which is the argument for reading the output after every fix rather than after the last one.
+
+**The eighth review was clean, and the ninth was not.** All four probes returned empty against round eight, all six classes stayed fixed, and it was the first of the nine with no finding — then round nine produced entry 23. The honest summary is that this loop has not been observed to go dry: the longest clean streak is one run, and the first round that *looked* like convergence was round five, whose single finding turned out to be a fix no run had tested yet. Eleven runs, eight classes, and a defect rate still above zero. Rounds 8 and 10 were clean; 9 and 11 were not. Rounds 12 to 15 followed and are counted in entry 25; the only finding out of them is recorded there as `S1-46`, because it is not a defect in an instrument.
+
+**Round 16 produced this entry's class a third time, and both of entry 24's fixes held.** *"0 compilation barriers. Your code parses cleanly across all 26 files"* — `FILES_CHANGED` welded onto the syntax reading, which `py_compile` takes over Python files only, on a pull request whose most recent commit was four markdown files. Filed as `S1-47` and **not fixed**: the review had landed ten minutes after the commit before it, which is the condition `addenda/accumulation.md` describes, and a record has no consequence to observe where a fix does. What held is the more useful half — fixability stayed qualitative with no second count, the rule was named with documentation pointed at rather than a command promised, complexity's measured zero read as a result, and coverage was labelled as *line* coverage. Four probes, four classes, second run each.
+
+
+## 25. The loop accelerated, and the acceleration was the only reliable signal
+
+**Where:** PR #61, measured across all 23 commits after the fact rather than noticed during them.
+
+Fourteen review rounds produced the eight defect classes recorded as entry 17-24. That much was already recorded. What was not recorded is the shape of the rate, and the rate is the finding.
+
+**Interval between commits, in order:**
+
+```
+ #2   78m     #11  333m     #16   3m
+ #4   99m     #12    3m     #17   3m
+ #10 157m     #13    4m     #18   3m
+              #14    3m     #19   4m
+              #15    3m     #20   4m
+                            #21   4m
+```
+
+Eleven consecutive commits at three to four minutes, after intervals in hours. (The 721-minute gap is a session break. The 0-minute entries are bot ledger commits and one batched push. The clean run is 11–21.)
+
+**And the lag from a fix to the defect it caused compressed as the rate rose:**
+
+| Seeding fix | Landed | Surfaced | Lag |
+|---|---|---|---|
+| streak fix | round 4 | round 7 | 3 |
+| complexity rename | round 4 | round 9 | 5 |
+| style-breakdown fix | round 10 | round 11 | 1 |
+| prose rule | round 10 | round 11 | 1 |
+
+Rate of change up roughly 25×; time to observe a consequence down 4×. One of those defects was a prohibition shipped in the same commit as the material that made it violable.
+
+**Every commit was individually verified.** Each guard was reverted against the defect it named, the suite was green, ruff was clean. The failure is not carelessness and no amount of care would have prevented it, which is the point: **at three minutes per fix the previous fix's output had not been read yet**, so every change landed on top of unobserved change. The condition has a name and it is measurable from git alone:
+
+> **commit interval < time-to-observe-consequence**
+
+Producing changes faster than their results can be read is accumulation without observation. Nothing on this page detects it, and the suite cannot — the suite was green through the entire acceleration.
+
+### Loops indicate drift on the floor, and always on Scope
+
+`design_docs/addenda/the-algorithm.md` gives the floor as **Audience · Scope · Format · Path**. An unterminating loop implicates one or more, and *necessarily* implicates Scope. The reason is structural rather than statistical: Audience, Format and Path errors produce one wrong artifact. Only a wrong boundary produces *another pass*. You re-enter because the previous pass did not contain the work. A Path failure does not loop at all — by the addendum it reopens the contract, a different event.
+
+Four for four, on this pull request:
+
+| Loop | Passes | What drifted |
+|---|---|---|
+| streak figure | 3 | Scoped to *the row*; real scope was *everywhere the figure reaches the prompt* |
+| clearance rule | 2 | Scoped to *the model's behaviour*, unenforceable; enforceable scope was *the assembled output* |
+| a term meaning two things | ongoing | Referent's scope never pinned, so each build-on widened it |
+| S1-45 | 5 | Mis-scoped as structural; it was two hours, and the judgement was never re-checked |
+
+So a loop count is not merely a tally of annoyances. **It is evidence that a boundary is wrong**, which is what makes it worth measuring rather than enduring.
+
+### The word that was its own instance
+
+For most of this pull request, "a thing that changed meaning without changing name" was called a **girder**. That word came from a mermaid diagram whose nodes grew denser and faster left to right — and the *shape* got named instead of the *phenomenon*. It was then used as a concept word across an artifact and five exchanges before an outside reader said it did not mean anything to them either.
+
+It is retired. The name was already in the code as `CitizenRecord.discontinuities`, with a precise definition: a stored thing changed meaning on a date. One name per meaning; the surplus one is swept.
+
+**This is entry 23's defect with a person in the model's place.** There, `branch threshold` and `Coverage` were adjacent rows in a table and the model welded them into "branch coverage," a measurement this system does not take. Here, density in a rendering became a semantic category. **Adjacency and salience in a rendering are not evidence about meaning**, and that holds for readers as well as for models — which is the more uncomfortable half, because every technique on this page assumes the reader is the reliable instrument.
+
+The instrument survives the word: *a diagram that grows denser toward its terminus is a diagram of something that is not terminating.*
+
+### The cheapest way to raise coverage is to delete code
+
+One commit in this sequence swept `with_config` and `tune` from `velocity.py` — dead code, S1-28, uncontroversial. Coverage went up, because coverage is a ratio and the deleted lines were the untested ones. The review of that push read the deletion as evidence of writing more testable code.
+
+Coverage is the 2.0-weighted term, the heaviest input to velocity. So the incentive stands as measured: **deleting an untested function scores like testing it, and costs less.** A citizen who cannot get a hard function under test can delete it instead and the score improves either way.
+
+This is not a defect in an instrument, which is what separates it from every other entry on this page. Nothing computed a wrong number; the ratio is the ratio. It is a property of the metric, and it lands on the clock `PRD.md` §8 sets — adding a signal stays legal mid-cohort, **changing coverage's meaning does not**, so this is either decided before cohort 1's first submission or it stands for the cohort. Filed as `S1-46` and deliberately not fixed: the honest options (weight deletions, or read a line count beside the ratio) all change a frozen signal, and entry 23 is the standing warning about handing a model a second figure for a quantity the first one already covers.
+
+
 Every defect on this page needed the system to *run*. None was found by reading code, and the test suite was green through all of them — 136 passing tests while SHODANN told a citizen they had written twice as many tests as they had; 243 while it told one their coverage jumped 98.6 points and, in the same comment, that there was nothing to compare against.
 
 **Three** of them were found by *rendering the output and reading it*, which is neither testing nor code review and appears in no methodology. It is the only technique on this page that catches a comment disagreeing with itself — and it caught one again on the day entry 12 was written. Wiring the real test tallies in put a truthful line reading *"0 passed, 11 in a pre-success state"* directly above a section that said *"Nothing in these readings raised one."* Both sentences were true of their own inputs, because the velocity engine has never been shown a pass/fail count. The pair was nonsense, no assertion could see it, and one read of the rendered comment could not miss it.

@@ -231,3 +231,43 @@ def test_the_footer_stays_inside_its_reservation() -> None:
     for level in (3, 4, 5, 6):
         words = len(clearance_disclosure(level).split())
         assert words <= DISCLOSURE_ALLOWANCE, f"band {level} footer is {words} words"
+
+
+@pytest.mark.parametrize("band", [1, 2, 3, 4, 5, 6])
+def test_every_band_is_told_a_band_is_not_earned(band: int) -> None:
+    """The rule no template stated, and the model twice invented in its place.
+
+    SHODANN told this citizen that small reversible commits are "how citizens
+    scale from ORANGE to higher clearance", and in an earlier review that a habit
+    "compounds as your clearance rises". The prompt supplies a band and tells the
+    model to calibrate to it, and says nowhere how a band is obtained - so the
+    model supplied a promotion mechanism, twice, from nothing.
+
+    Not cosmetic. #59 *declined* `prompts/03`'s `INFER_CLEARANCE` rather than
+    leaving it unimplemented, because a band inferred from readings is a second
+    score and this product rests on improvement outranking position. A citizen
+    told that iterating well raises their band has been handed that second score
+    by the one voice they cannot check it against.
+
+    Parametrised across all six because the rule does not vary by band, and
+    because the bands that most need it - INFRARED and RED, where a citizen has
+    no reference frame - are the ones a maintainer testing at ORANGE never sees.
+    """
+    instructions = clearance_instructions(band)
+
+    assert "assigned, never earned" in instructions
+    assert ".shodann/clearances.json" in instructions
+    assert "will raise their clearance" in instructions
+
+
+def test_the_rule_reaches_the_assembled_prompt() -> None:
+    """A rule in a helper nobody injects is a rule the model never sees.
+
+    `clearance_instructions` feeds `{{ CLEARANCE_INSTRUCTIONS }}`, one of the six
+    composed sections rather than a scalar, so the binding is worth asserting
+    separately from the string.
+    """
+    from test_prompts import PROMPTS, sample_context
+
+    rendered = render_prompt(sample_context(), prompts_dir=PROMPTS)
+    assert "A band is assigned, never earned" in rendered

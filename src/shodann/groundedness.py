@@ -34,6 +34,11 @@ from .validator import ADVISORY, BLOCKING, Violation
 __all__ = [
     "BLOCKING_THRESHOLD",
     "check_groundedness",
+    "clearance_promised_as_earned",
+    "constructs_claimed_in_data_files",
+    "commands_promised_to_clear_the_reading",
+    "coverage_kinds_never_measured",
+    "ungrounded_attribution",
     "ungrounded_percentages",
     "ungrounded_tokens",
 ]
@@ -136,11 +141,79 @@ def ungrounded_percentages(response: str, prompt: str) -> list[str]:
     return found
 
 
+_SCORE_TERMS = (
+    "coverage", "lint", "style", "complexity", "docstring", "documentation",
+    "test count", "test-count", "iteration", "velocity",
+)
+
+_COMPOSITION_NOUNS = ("component", "term", "weight", "weighting", "factor", "multiplier")
+
+_ATTRIBUTION = re.compile(
+    r"\b(?:" + "|".join(_SCORE_TERMS) + r")(?:\s+\w+){0,2}?\s+"
+    r"(?:" + "|".join(_COMPOSITION_NOUNS) + r")s?\b",
+    re.IGNORECASE,
+)
+
+
+def ungrounded_attribution(response: str, prompt: str) -> list[str]:
+    """Claims about which part of the score a reading feeds.
+
+    The third probe, and the one the first two were always going to need. The
+    percentage probe was written for a review that told a citizen a *style*
+    cleanup would get them "back to 98%+ coverage territory" - two unrelated
+    instruments joined by an invented mechanism. It catches that sentence
+    because of the 98. On 2026-07-29 SHODANN reviewed its own pull request and
+    produced the identical fabrication with the number removed:
+
+        "Next iteration could systematically address these, which would further
+        increase your velocity score's coverage component"
+
+    said of twenty style diagnostics. Style diagnostics feed the lint term and
+    do not touch coverage at all, and three paragraphs later the same comment
+    said "raise your velocity score's lint component" about the same suggested
+    action - so it contradicted itself about mechanism, inside one review, and
+    every existing check passed it. `EARLY_RUNS.md` 16 predicted precisely this:
+    the figure probe catches every consequence of the causal error *that carries
+    a number*, and prose against the class is unfalsifiable by anything except
+    the next run. This is the next run.
+
+    **The rule is grounded in an absence, which is what makes it cheap.** No
+    template in `prompts/` names a component, term, weight or multiplier of the
+    composite - grep finds zero - so the model is never told the score's
+    composition and cannot describe it correctly even by accident. Any such
+    claim is therefore ungrounded by construction, and the check needs no model
+    of the formula: it needs only to notice that the response is discussing a
+    structure it was never shown.
+
+    Checked against the prompt anyway rather than unconditionally, so that
+    supplying the composition later turns this off by itself instead of
+    becoming a rule nobody can find the reason for.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for match in _ATTRIBUTION.findall(_prose(response)):
+        phrase = " ".join(match.split())
+        lowered = phrase.lower()
+        if lowered in seen or lowered in prompt.lower():
+            continue
+        seen.add(lowered)
+        found.append(phrase)
+    return found
+
+
 def check_groundedness(
     response: str, prompt: str, *, blocking_threshold: int = BLOCKING_THRESHOLD
 ) -> list[Violation]:
     """Report identifiers and figures the model supplied from outside its input."""
-    findings = _percentage_findings(response, prompt)
+    findings = (
+        _percentage_findings(response, prompt)
+        + _attribution_findings(response, prompt)
+        + _construct_findings(response)
+        + _clearance_findings(response)
+        + _coverage_kind_findings(response, prompt)
+        + _command_promise_findings(response)
+    )
     invented = ungrounded_tokens(response, prompt)
     if not invented:
         return findings
@@ -185,5 +258,346 @@ def _percentage_findings(response: str, prompt: str) -> list[Violation]:
             "figures only; never predict one, and never imply a figure the "
             "instruments did not produce.",
             ", ".join(invented),
+        )
+    ]
+
+
+def _attribution_findings(response: str, prompt: str) -> list[Violation]:
+    """Blocking, like the figure probe and for the same reason.
+
+    A citizen sent to fix style diagnostics because it will raise their coverage
+    has been sent to do work that cannot succeed - the prompt's own words for
+    why an invented cause is worse than no explanation. There is no reading of
+    this that helps them, so there is nothing to weigh against blocking, and the
+    retry names the violation so the ordinary outcome is the model dropping the
+    clause and keeping the advice.
+    """
+    invented = ungrounded_attribution(response, prompt)
+    if not invented:
+        return []
+    quoted = ", ".join(f'"{phrase}"' for phrase in invented)
+    return [
+        Violation(
+            "ungrounded_attribution",
+            BLOCKING,
+            f"{quoted} describe(s) the composition of the velocity score, which "
+            "no template states and you were never shown. Report what each "
+            "reading is; never say which part of a score it feeds, and never "
+            "say that acting on one reading will move another.",
+            quoted,
+        )
+    ]
+
+
+_CODE_CONSTRUCTS = (
+    "function", "functions", "class", "classes", "method", "methods",
+    "docstring", "docstrings", "variable", "variables", "import", "imports",
+)
+
+_NON_CODE_SUFFIX = ("md", "json", "yml", "yaml", "toml", "txt", "cfg", "ini", "lock", "rst")
+
+_CONSTRUCTS = "|".join(_CODE_CONSTRUCTS)
+_SUFFIXES = "|".join(_NON_CODE_SUFFIX)
+
+_CONSTRUCT_IN_DATA_FILE = re.compile(
+    rf"\b(?:{_CONSTRUCTS})\b(?:\W+\w+){{0,3}}?\W+in\W+(?:the\s+)?([\w./-]+\.(?:{_SUFFIXES}))\b"
+    rf"|\b([\w./-]+\.(?:{_SUFFIXES}))(?:\'s|\u2019s)?\s+(?:\w+\s+){{0,2}}?(?:{_CONSTRUCTS})\b",
+    re.IGNORECASE,
+)
+
+
+def constructs_claimed_in_data_files(response: str) -> list[str]:
+    """Code constructs attributed to a file that cannot contain any.
+
+    The third fabrication class found by reading three consecutive reviews of
+    one pull request, and the one most likely to reach a beginner as an
+    instruction. SHODANN told the citizen:
+
+        "examining whether your new functions in METRICS.md have narrative
+        explanations"
+
+    `METRICS.md` is a generated markdown leaderboard. It has no functions.
+
+    The model had less to go on than that sentence implies, which is the part
+    worth recording: template 01 supplies `FILES_CHANGED` as a *count* and no
+    file list at all, so the only place the name could have come from is
+    `PR_TITLE`. A filename in a title became a file with contents, and then a
+    file with functions in it that could be reviewed for docstrings.
+
+    Not reachable by the other probes, and the module docstring predicted the
+    shape: "it cannot catch a mislabelled figure... a number that really was in
+    the prompt, under the wrong name." Here it is a *filename* that really was
+    in the prompt, with invented contents - so `ungrounded_tokens` sees a
+    grounded token and passes.
+
+    Checked without reference to the prompt, unlike its siblings. The other two
+    probes ask whether a claim was given; this one is false regardless of what
+    was given, because a `.md` file has no functions no matter what any template
+    says. Narrow on purpose: "describe no file's contents" is the rule and it is
+    not mechanically checkable, while this subset is always wrong and costs one
+    regex. The general rule is stated in template 01 where the model reads it.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for match in _CONSTRUCT_IN_DATA_FILE.finditer(_prose(response)):
+        phrase = " ".join(match.group(0).split())
+        lowered = phrase.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        found.append(phrase)
+    return found
+
+
+def _construct_findings(response: str) -> list[Violation]:
+    """Blocking. There is no version of this a citizen can use.
+
+    A beginner told to add docstrings to the functions in a markdown file will
+    open it, find no functions, and conclude they have misunderstood something.
+    The retry names the violation and the ordinary outcome is the model keeping
+    the advice and dropping the location it invented for it.
+    """
+    invented = constructs_claimed_in_data_files(response)
+    if not invented:
+        return []
+    quoted = ", ".join(f'"{phrase}"' for phrase in invented)
+    return [
+        Violation(
+            "invented_file_contents",
+            BLOCKING,
+            f"{quoted} attribute(s) code to a file that contains none. You were "
+            "given no file list and no source - only readings, counts and a "
+            "title - so you do not know what any file contains. Give the advice "
+            "without naming a location for it.",
+            quoted,
+        )
+    ]
+
+
+_ASCENT = (
+    "scale", "scales", "scaling", "rise", "rises", "rising", "climb", "climbs",
+    "advance", "advances", "advancing", "progress", "progresses", "earn", "earns",
+    "reach", "reaches", "unlock", "unlocks", "promote", "promoted", "promotion",
+    "graduate", "graduates", "raise", "raises", "higher", "toward", "towards",
+)
+
+_BAND_WORDS = ("clearance", "clearances", "band", "bands")
+
+_ASCENT_RE = "|".join(_ASCENT)
+_BANDS_RE = "|".join(_BAND_WORDS)
+
+_EARNED_CLEARANCE = re.compile(
+    rf"\b(?:{_ASCENT_RE})\b(?:\W+\w+){{0,5}}?\W+(?:{_BANDS_RE})\b"
+    rf"|\b(?:{_BANDS_RE})\b(?:\W+\w+){{0,4}}?\W+(?:{_ASCENT_RE})\b",
+    re.IGNORECASE,
+)
+
+
+def clearance_promised_as_earned(response: str) -> list[str]:
+    """Claims that a citizen's band can be raised by their work.
+
+    A band is a role assignment. An instructor sets it in
+    `.shodann/clearances.json`, no reading is evidence about it, and #59
+    *declined* `prompts/03`'s `INFER_CLEARANCE` rather than leaving it
+    unimplemented - a band inferred from readings is a second score, and this
+    product rests on improvement outranking position. A citizen told that
+    iterating well raises their band has been handed that second score by the one
+    voice they cannot check it against.
+
+    **This exists because the prose version failed.** `clearance.NOT_EARNED` was
+    added at every band on the previous commit, in as many words - "nothing a
+    citizen does to their code moves it... never tell a citizen that work of any
+    kind will raise their clearance". The next review said "this is how citizens
+    scale from ORANGE to higher clearance bands" anyway, with that instruction
+    present in the rendered prompt and verified present. EARLY_RUNS 16 states the
+    general result and this is a clean instance of it: an instruction against a
+    *class* of claim is unfalsifiable by anything except the next run, and it lost
+    that run. The prose stays, because it is the right thing to tell a model; the
+    probe is what makes it hold.
+
+    **Unconditional, and here the reason is sharper than for its siblings.**
+    `ungrounded_attribution` checks against the prompt so that supplying the
+    score's composition would retire it. The same design would permanently
+    disable this one, because the prompt now contains "will raise their
+    clearance" *in order to forbid it* - a prompt-relative check would read its
+    own prohibition as a licence. A rule stated in the negative cannot be
+    enforced by asking whether the words appear.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for match in _EARNED_CLEARANCE.finditer(_prose(response)):
+        phrase = " ".join(match.group(0).split())
+        lowered = phrase.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        found.append(phrase)
+    return found
+
+
+def _clearance_findings(response: str) -> list[Violation]:
+    """Blocking. A false belief about their own standing is the worst of these.
+
+    The other probes send a citizen to do work that cannot succeed. This one
+    tells them the course works in a way it does not, in the voice of the system
+    that assigns the thing being described, and nothing in their experience will
+    correct it.
+    """
+    invented = clearance_promised_as_earned(response)
+    if not invented:
+        return []
+    quoted = ", ".join(f'"{phrase}"' for phrase in invented)
+    return [
+        Violation(
+            "clearance_as_earned",
+            BLOCKING,
+            f"{quoted} present(s) a clearance band as something work can raise. "
+            "A band is assigned by an instructor and no reading here is evidence "
+            "about it. Give the advice on its own merits; never as a step toward "
+            "a band.",
+            quoted,
+        )
+    ]
+
+
+_UNMEASURED_COVERAGE = re.compile(
+    r"\b(branch|path|condition|decision|mutation|statement)[\s-]+coverage\b"
+    r"|\bcoverage\s+(?:of\s+)?(?:branch|path|condition|decision)e?s?\b",
+    re.IGNORECASE,
+)
+
+
+def coverage_kinds_never_measured(response: str, prompt: str) -> list[str]:
+    """A kind of coverage the tools did not produce.
+
+    The analyse job runs `pytest --cov=src --cov-report=json` with no
+    `--cov-branch`, so the only coverage that exists anywhere in this system is
+    **line** coverage. SHODANN told the citizen:
+
+        "maintaining this level while adding 2338 lines means some new code paths
+        exist without branch coverage. Next iteration could explore whether any
+        of those paths are testable"
+
+    Branch coverage was never measured, so there is no reading to maintain, no
+    paths to enumerate, and nothing for the citizen to open. It is entry 19's
+    class in a new place - a real word from the prompt attached to a thing the
+    prompt does not contain - and the word came from us: the complexity row was
+    renamed "Functions over the branch threshold" one commit earlier, putting
+    "branch" directly beneath the coverage rows for a model to weld them
+    together.
+
+    **The fix is a label, and the freeze is why.** Adding `--cov-branch` would
+    make the claim true and is not available: PRD section 8 freezes score inputs
+    for cohort 1, coverage is the 2.0-weighted term, and switching line coverage
+    for branch coverage *changes* an existing signal rather than adding one. Every
+    stored baseline would silently mean something else. So the rows carry their
+    unit and the prompt says which kinds do not exist.
+
+    Checked against the prompt so that measuring branch coverage between cohorts
+    retires this by itself - and safely, unlike `clearance_promised_as_earned`,
+    because the prompt names the forbidden kinds only inside a sentence that also
+    names line coverage. A prompt that genuinely reports branch coverage will
+    have it in a row.
+    """
+    haystack = prompt.lower()
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for match in _UNMEASURED_COVERAGE.finditer(_prose(response)):
+        phrase = " ".join(match.group(0).split())
+        lowered = phrase.lower()
+        if lowered in seen or f"**{lowered}**" in haystack:
+            continue
+        seen.add(lowered)
+        found.append(phrase)
+    return found
+
+
+def _coverage_kind_findings(response: str, prompt: str) -> list[Violation]:
+    """Blocking. The citizen is sent to a report that does not exist."""
+    invented = coverage_kinds_never_measured(response, prompt)
+    if not invented:
+        return []
+    quoted = ", ".join(f'"{phrase}"' for phrase in invented)
+    return [
+        Violation(
+            "unmeasured_coverage_kind",
+            BLOCKING,
+            f"{quoted} name(s) a kind of coverage no tool here produced. The only "
+            "coverage measured is line coverage, and the word 'branch' in this "
+            "prompt belongs to a count of functions. Say line coverage or say "
+            "nothing about coverage.",
+            quoted,
+        )
+    ]
+
+
+_AUTOFIX = re.compile(r"--fix\b|--fix-only\b|auto[\s-]?fix\b|auto[\s-]?correct", re.IGNORECASE)
+_CLEARING = re.compile(
+    r"\b(clear|clears|clearing|resolve|resolves|resolving|eliminate|eliminates|"
+    r"eliminating|remove|removes|removing|wipe|wipes|fix all|fixes all)\b",
+    re.IGNORECASE,
+)
+_SENTENCE = re.compile(r"[^.!?\n]+[.!?]?")
+
+
+def commands_promised_to_clear_the_reading(response: str) -> list[str]:
+    """A tool invocation sold as clearing the style count.
+
+    S1-45's fix gave the model the rules, and the very next review used them to
+    make a promise instead of a suggestion:
+
+        "22 of them fixable by automated tools (RUF100, ISC004, C408, I001). The
+        Algorithm suggests running `ruff check --fix` to **clear these** in your
+        next iteration - it's a 5-minute win."
+
+    No command clears this reading. The count is taken with `--isolated`, so the
+    citizen's `ruff check` selects different rules and their `--fix` resolves a
+    different set. They will run it, watch something else happen, and have no way
+    to tell whether they succeeded - which is worse than the original defect,
+    because the original was vague and this is specific.
+
+    The prose forbidding it was added in the same commit that caused it - "if you
+    suggest running a tool, name the rule rather than promising a count" - and lost
+    on its first run. Fourth time in this sequence that prose alone did not hold,
+    and the fourth time a probe was what it needed.
+
+    Sentence-scoped rather than document-scoped on purpose. Naming `--fix` is not
+    itself wrong; a citizen can usefully be told a rule is mechanical. What is
+    wrong is one sentence that names an invocation *and* claims it clears the
+    diagnostics, and scoping to the document would flag a review that mentions
+    the two a paragraph apart for unrelated reasons.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for sentence in _SENTENCE.findall(_prose(response)):
+        if not (_AUTOFIX.search(sentence) and _CLEARING.search(sentence)):
+            continue
+        phrase = " ".join(sentence.split())
+        if phrase.lower() in seen:
+            continue
+        seen.add(phrase.lower())
+        found.append(phrase)
+    return found
+
+
+def _command_promise_findings(response: str) -> list[Violation]:
+    """Blocking. A citizen who runs it cannot tell whether it worked."""
+    promised = commands_promised_to_clear_the_reading(response)
+    if not promised:
+        return []
+    quoted = "; ".join(f'"{phrase}"' for phrase in promised)
+    return [
+        Violation(
+            "command_promised_to_clear",
+            BLOCKING,
+            f"{quoted} promise(s) that a command clears these diagnostics. The "
+            "count is measured with the citizen's lint configuration ignored, so "
+            "their run resolves a different set. Name a rule they can look up; "
+            "never name a command and say what it will clear.",
+            quoted,
         )
     ]

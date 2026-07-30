@@ -11,6 +11,11 @@ import pytest
 from shodann.groundedness import (
     BLOCKING_THRESHOLD,
     check_groundedness,
+    clearance_promised_as_earned,
+    commands_promised_to_clear_the_reading,
+    constructs_claimed_in_data_files,
+    coverage_kinds_never_measured,
+    ungrounded_attribution,
     ungrounded_percentages,
     ungrounded_tokens,
 )
@@ -186,3 +191,309 @@ def test_the_identifier_probe_still_reports_alongside_the_figure_probe() -> None
     )
     codes = [v.code for v in check_groundedness(response, PROMPT_WITH_READINGS)]
     assert codes == ["ungrounded_figure", "ungrounded_reference"], "both, and figures first"
+
+
+# --- the third probe: a mechanism nobody was shown --------------------------
+
+REAL_COMMENT = """\
+### 📈 Growth Opportunities
+
+- **Style alignment**: The Algorithm has observed 20 style diagnostics across
+  your submission. Next iteration could systematically address these, which
+  would further increase your velocity score's coverage component.
+
+### 🔧 Recommended Iteration
+
+Run your style tool against it in isolation, resolve those diagnostics, and
+commit that single file. This will raise your velocity score's lint component.
+"""
+
+
+def test_the_review_shodann_wrote_about_its_own_pull_request_is_caught() -> None:
+    """Verbatim from the comment SHODANN posted on PR #61 on 2026-07-29.
+
+    Style diagnostics feed the lint term and do not touch coverage, and the
+    same comment said both things about the same suggested action three
+    paragraphs apart. Every existing check passed it: no identifier was quoted,
+    so `ungrounded_tokens` saw nothing, and the clause carries no figure, so
+    `ungrounded_percentages` - which exists *because* of the identical
+    style-to-coverage fabrication with a 98 attached - saw nothing either.
+
+    Blocking rather than advisory. A citizen sent to fix style diagnostics
+    because it will raise their coverage has been sent to do work that cannot
+    succeed, and there is no reading of that which helps them.
+    """
+    findings = check_groundedness(REAL_COMMENT, prompt="Coverage: 97.6%. Style issues: 20.")
+    attribution = [f for f in findings if f.code == "ungrounded_attribution"]
+
+    assert attribution, "the fabrication that survived both existing probes"
+    assert attribution[0].severity == BLOCKING
+    assert "coverage component" in attribution[0].evidence.lower()
+    assert "lint component" in attribution[0].evidence.lower(), (
+        "both halves, not just the wrong one"
+    )
+
+
+def test_naming_a_reading_without_attributing_it_is_fine() -> None:
+    """The probe must not cost SHODANN the ability to report a measurement.
+
+    "Coverage is 97.6%" and "20 style diagnostics" are the whole point of the
+    comment. What is forbidden is claiming to know how they combine.
+    """
+    clean = (
+        "Coverage reads 97.6% and the style tool reported 20 diagnostics. "
+        "The Algorithm suggests resolving one file's diagnostics this iteration."
+    )
+    assert ungrounded_attribution(clean, prompt="Coverage: 97.6%") == []
+
+
+def test_a_composition_the_prompt_does_state_is_grounded() -> None:
+    """If a template ever supplies the formula, this rule retires itself.
+
+    Written this way so the check cannot outlive its reason and become a rule
+    nobody can find the justification for.
+    """
+    assert ungrounded_attribution(
+        "This raises the coverage term.", prompt="The coverage term is weighted 2.0."
+    ) == []
+
+
+# --- the fourth probe: contents invented for a file with none ---------------
+
+POSTED_ADVICE = (
+    "At ORANGE clearance, the Algorithm recommends examining whether your new "
+    "functions in METRICS.md have narrative explanations. Not every function "
+    "needs prose, but producer functions often benefit from context."
+)
+
+
+def test_a_markdown_file_is_not_told_to_document_its_functions() -> None:
+    """Verbatim from SHODANN's third review of PR #61, 2026-07-29.
+
+    `METRICS.md` is a generated markdown leaderboard and has no functions. The
+    model had less to work from than the sentence implies: template 01 supplies
+    `FILES_CHANGED` as a *count* and no file list at all, so the name can only
+    have come from `PR_TITLE`. A filename in a title became a file with
+    contents, then a file whose functions could be reviewed for docstrings.
+
+    The module docstring predicted the shape - "it cannot catch a mislabelled
+    figure... a number that really was in the prompt, under the wrong name."
+    Here a *filename* really was in the prompt, so the identifier probe sees a
+    grounded token and passes.
+    """
+    findings = check_groundedness(
+        POSTED_ADVICE, prompt="Files changed: 13. Title: give METRICS.md a producer."
+    )
+    invented = [f for f in findings if f.code == "invented_file_contents"]
+
+    assert invented, "the token is grounded; the claim about its contents is not"
+    assert invented[0].severity == BLOCKING
+    assert "METRICS.md" in invented[0].evidence
+
+
+def test_the_same_claim_about_a_real_module_is_left_alone() -> None:
+    """A `.py` file does have functions, and saying so must stay legal.
+
+    The probe is narrow deliberately. "Describe no file's contents" is the rule
+    and it lives in template 01 because it is not mechanically checkable; this
+    check covers only the subset that is wrong whatever the prompt said.
+    """
+    assert constructs_claimed_in_data_files(
+        "The functions in leaderboard.py could use docstrings."
+    ) == []
+
+
+def test_naming_a_data_file_without_claiming_code_in_it_is_fine() -> None:
+    """SHODANN has to be able to talk about METRICS.md, which this PR added."""
+    for benign in (
+        "METRICS.md is regenerated on merge.",
+        "METRICS.md now has a producer, and 20 style diagnostics remain.",
+        "The Algorithm suggests a docstring on your producer function.",
+    ):
+        assert constructs_claimed_in_data_files(benign) == [], benign
+
+
+# --- the fifth probe: the one written because prose lost ---------------------
+
+
+@pytest.mark.parametrize(
+    "posted",
+    [
+        # Round 6, with clearance.NOT_EARNED present in the rendered prompt.
+        "Ten commits in a single PR shows you're breaking work into reviewable "
+        "chunks. This is how citizens scale from ORANGE to higher clearance bands.",
+        # Round 5, same claim, before the prose rule existed.
+        "This is how citizens scale from ORANGE to higher clearance.",
+        # Round 3, the same claim in a shape a phrase-match would miss.
+        "building the habit of self-documenting code - a skill that compounds "
+        "as your clearance rises.",
+    ],
+)
+def test_a_band_is_never_presented_as_something_work_can_raise(posted: str) -> None:
+    """Three real instances across three reviews of PR #61.
+
+    A band is a role assignment. #59 *declined* `prompts/03`'s `INFER_CLEARANCE`
+    rather than leaving it unimplemented, because a band inferred from readings is
+    a second score and this product rests on improvement outranking position.
+
+    The middle case is why this is a probe and not a sentence. `clearance.
+    NOT_EARNED` was added at every band on the previous commit - "never tell a
+    citizen that work of any kind will raise their clearance" - and the next
+    review made the claim anyway, with the instruction verified present in the
+    rendered prompt. EARLY_RUNS 16's result, cleanly reproduced: an instruction
+    against a class of claim is unfalsifiable except by the next run, and it lost.
+
+    The third case is why the check is not a phrase list. "as your clearance
+    rises" shares no wording with "scale from ORANGE to higher clearance bands"
+    and makes the identical claim.
+    """
+    findings = check_groundedness(posted, prompt="Clearance Level: ORANGE (3).")
+    earned = [f for f in findings if f.code == "clearance_as_earned"]
+
+    assert earned, "a promotion mechanism the readings are not evidence about"
+    assert earned[0].severity == BLOCKING
+
+
+def test_the_prompts_own_prohibition_is_not_read_as_a_licence() -> None:
+    """Why this probe is unconditional where `ungrounded_attribution` is not.
+
+    That one checks against the prompt so supplying the score's composition
+    retires it. The same design would permanently disable this one: the prompt
+    now says "never tell a citizen that work of any kind will raise their
+    clearance", so a prompt-relative check would find its own prohibition and
+    treat every violation as grounded. A rule stated in the negative cannot be
+    enforced by asking whether the words appear.
+    """
+    from shodann.clearance import NOT_EARNED
+
+    assert "raise their clearance" in NOT_EARNED, "the prohibition uses the forbidden words"
+    assert clearance_promised_as_earned(
+        "This is how citizens scale to higher clearance bands."
+    ), "and the probe must fire regardless of what the prompt contains"
+
+
+def test_talking_about_the_band_a_citizen_holds_stays_legal() -> None:
+    """Clearance calibration is most of what LAYER 3 does and must survive."""
+    for benign in (
+        "At ORANGE clearance, one clear example per function is sufficient.",
+        "Your clearance is set in .shodann/clearances.json - you are currently ORANGE.",
+        "Match complexity of suggestions to clearance level.",
+        "Pick one style diagnostic and fix that pattern everywhere.",
+    ):
+        assert clearance_promised_as_earned(benign) == [], benign
+
+
+# --- the sixth probe: a coverage the tools never produced --------------------
+
+
+def _real_prompt() -> str:
+    """The assembled prompt, not a stand-in.
+
+    A hand-written prompt string would decide this probe's own answer: the check
+    asks whether a coverage kind appears as a row label, so a fixture that omits
+    the rows passes everything and one that invents them passes nothing.
+    """
+    from shodann.prompts import render_prompt
+    from test_prompts import PROMPTS, sample_context
+
+    return render_prompt(sample_context(), prompts_dir=PROMPTS)
+
+
+def test_branch_coverage_is_not_a_reading_this_system_takes() -> None:
+    """Verbatim from SHODANN's ninth review of PR #61.
+
+        "maintaining this level while adding 2338 lines means some new code paths
+        exist without branch coverage. Next iteration could explore whether any
+        of those paths are testable"
+
+    The analyse job runs `pytest --cov=src --cov-report=json` with no
+    `--cov-branch`, so line coverage is the only coverage this system has ever
+    measured. There is no branch reading to maintain, no paths to enumerate and
+    nothing for the citizen to open.
+
+    Entry 19's class in a new place - a real word from the prompt attached to a
+    thing the prompt does not contain - and the word came from us. The complexity
+    row was renamed "Functions over the branch threshold" one commit earlier,
+    which put "branch" directly beneath the coverage rows for a model to weld
+    together. Two of the nine rounds produced a defect caused by the previous
+    round's fix, which is its own argument for reading the output after every one.
+    """
+    findings = check_groundedness(
+        "Some new code paths exist without branch coverage.", prompt=_real_prompt()
+    )
+    invented = [f for f in findings if f.code == "unmeasured_coverage_kind"]
+
+    assert invented, "branch coverage is not measured anywhere in this system"
+    assert invented[0].severity == BLOCKING
+
+
+def test_the_coverage_that_is_measured_stays_sayable() -> None:
+    """Reporting the reading is the point; only the invented kinds are barred.
+
+    The complexity row legitimately contains the word "branch" - it counts
+    functions over a branch threshold - so a probe that fired on "branch" alone
+    would reject the sentence the round-4 fix exists to produce.
+    """
+    real = _real_prompt()
+    for benign in (
+        "Line coverage moved from 97.4% to 97.6%.",
+        "Coverage climbed 0.2% this cycle.",
+        "Zero functions exceeded the branch threshold.",
+        "Consider splitting that branch into two functions.",
+    ):
+        assert coverage_kinds_never_measured(benign, real) == [], benign
+
+
+def test_measuring_it_later_retires_the_rule() -> None:
+    """Unlike the clearance probe, this one is safe to make prompt-relative.
+
+    The prompt names the forbidden kinds only inside a sentence that also names
+    line coverage, so it cannot read its own prohibition as a licence - the check
+    looks for the kind as a **bolded row label**, which is how a real reading
+    appears. Written this way so that turning on `--cov-branch` between cohorts
+    switches the rule off rather than leaving one nobody can find the reason for.
+    """
+    with_branch = "| **branch coverage** | 88.0% | 91.0% | +3.0% |"
+    assert coverage_kinds_never_measured("Branch coverage rose to 91%.", with_branch) == []
+
+
+# --- the seventh probe: a command sold as clearing the reading ---------------
+
+
+def test_no_command_is_promised_to_clear_the_style_count() -> None:
+    """Verbatim from round 11, caused by round 10's fix.
+
+        "22 of them fixable by automated tools (RUF100, ISC004, C408, I001). The
+        Algorithm suggests running `ruff check --fix` to clear these in your next
+        iteration - it's a 5-minute win."
+
+    No command clears this reading. The count is taken with `--isolated`, so the
+    citizen's `ruff check` selects different rules and their `--fix` resolves a
+    different set. They run it, watch something else happen, and cannot tell
+    whether they succeeded - worse than the defect it replaced, because that one
+    was vague and this is specific.
+
+    The prose forbidding it shipped in the same commit that caused it and lost on
+    its first run. Fourth time in this sequence prose alone did not hold.
+    """
+    findings = check_groundedness(
+        "The Algorithm suggests running `ruff check --fix` to clear these.",
+        prompt="Style Issues: 23 alignment opportunities.",
+    )
+    promised = [f for f in findings if f.code == "command_promised_to_clear"]
+
+    assert promised, "a promise the citizen cannot verify"
+    assert promised[0].severity == BLOCKING
+
+
+def test_naming_a_rule_or_a_command_alone_stays_legal() -> None:
+    """Sentence-scoped for a reason. Naming `--fix` is not wrong, and telling a
+    citizen a rule is mechanical is the point of the round-10 fix. Only one
+    sentence doing both - an invocation plus a claim about what it clears - is."""
+    for benign in (
+        "`RUF100` marks an unused noqa. Look it up and remove one.",
+        "Most of these are mechanical; `RUF100` is one to read about.",
+        "Run `ruff check --fix` on one file. Separately, the rules are RUF100 and C408.",
+        "Clearing these makes the codebase easier for the next citizen to read.",
+    ):
+        assert commands_promised_to_clear_the_reading(benign) == [], benign

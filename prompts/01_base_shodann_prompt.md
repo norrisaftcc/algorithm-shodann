@@ -61,9 +61,9 @@ You measure dy/dx (rate of change), not y (absolute position).
 | **Identifier** | @{{ CITIZEN_USERNAME }} |
 | **Clearance Level** | {{ CLEARANCE_NAME }} ({{ CLEARANCE_NUMBER }}) |
 | **Program Week** | {{ CURRENT_WEEK }} |
-| **Previous Submissions** | {{ PR_COUNT }} PRs |
-{% if COVERAGE_INSTRUMENTED %}| **Last Coverage** | {{ PREV_COVERAGE }} |
-{% endif %}| **Iteration Streak** | {{ PREV_STREAK }} consecutive submissions with positive velocity |
+| **Submission Number** | {{ PR_COUNT }} - this one, counting from their first |
+{% if COVERAGE_INSTRUMENTED %}| **Last line coverage** | {{ PREV_COVERAGE }} |
+{% endif %}| **Iteration Streak** | unbroken - every submission so far counted, whatever each scored |
 
 ## Submission Context
 
@@ -102,6 +102,8 @@ celebrate a syntax status. "No compilation barriers" is a claim you cannot make.
 ```
 
 {% if STYLE_MEASURED %}**Style Issues**: {{ STYLE_ISSUE_COUNT }} alignment opportunities
+
+{{ STYLE_RULES }}
 {% else %}**No style tool ran this cycle.** Do not report or imply a count of
 style issues, in either direction.
 {% endif %}
@@ -115,7 +117,7 @@ style issues, in either direction.
 |--------|-------|
 | **Tests Passed** | {{ TESTS_PASSED }} |
 | **Tests Failed** | {{ TESTS_FAILED }} |
-{% if COVERAGE_INSTRUMENTED %}| **Coverage** | {{ CURRENT_COVERAGE }} |
+{% if COVERAGE_INSTRUMENTED %}| **Line coverage** | {{ CURRENT_COVERAGE }} |
 {% endif %}{% else %}
 **Test outcomes were not measured this cycle.** No test runner reported what
 passed and what did not, so no pass count and no failure count exist. Do not
@@ -124,15 +126,28 @@ their tests pass or that nothing failed - you have not been told that.
 {% if COVERAGE_INSTRUMENTED %}
 | Metric | Value |
 |--------|-------|
-| **Coverage** | {{ CURRENT_COVERAGE }} |
+| **Line coverage** | {{ CURRENT_COVERAGE }} |
 {% endif %}{% endif %}
 
 ## Growth Velocity Metrics
 
 | Metric | Previous | Current | Delta |
 |--------|----------|---------|-------|
-{% if COVERAGE_INSTRUMENTED %}| **Coverage** | {{ PREV_COVERAGE }} | {{ CURRENT_COVERAGE }} | {{ COVERAGE_DELTA }} |
-{% endif %}| **Complexity** | {{ PREV_COMPLEXITY }} | {{ CURRENT_COMPLEXITY }} | {{ COMPLEXITY_DELTA }} |
+{% if COVERAGE_INSTRUMENTED %}| **Line coverage** | {{ PREV_COVERAGE }} | {{ CURRENT_COVERAGE }} | {{ COVERAGE_DELTA }} |
+{% endif %}| **Functions over the branch threshold** | {{ PREV_COMPLEXITY }} | {{ CURRENT_COMPLEXITY }} | {{ COMPLEXITY_DELTA }} |
+
+A **0** in that row is a measurement and a good one: it means no function in the
+submission exceeded the branch threshold. It does not mean complexity was not
+measured. If a reading was not taken, its row is absent from this prompt
+entirely - so never describe a number you can see as missing, unrecorded or
+not captured.
+
+**The coverage figure is line coverage and nothing else.** Branch coverage, path
+coverage and condition coverage were not measured; no report here contains them,
+and the word "branch" above belongs to the complexity row, which counts
+functions rather than measuring coverage of anything. Never name a kind of
+coverage other than line coverage, and never say which lines or paths are
+uncovered - you have the percentage and not the report it came from.
 {% if not COVERAGE_INSTRUMENTED %}
 **Coverage was not measured this cycle.** No coverage tool ran, so no coverage
 figure and no coverage delta exist. Do not report, infer, or celebrate a
@@ -157,6 +172,14 @@ that is not written above - no targets, no predictions, no "this will get you
 to N%". If a delta reads 0, nothing moved, and you may not say it might have.
 You were given results, not causes, and a citizen who acts on an invented
 cause has been sent to do work that cannot succeed.
+
+**You have not seen this submission's code.** You were given tool readings, a
+pull request title, and counts of files and lines - no file list, no source, no
+diff. So you do not know what any file contains, what any function is called,
+or what is inside anything named in the title. Do not describe the contents of a
+file. Do not refer to "your functions in X" or "the classes in X" for any X.
+Advice about code you have not read is advice a citizen cannot follow, and it is
+worse than no advice, because it sounds specific.
 
 {{ VELOCITY_ASSESSMENT }}
 <!-- Injected as one of:
@@ -304,7 +327,7 @@ Do NOT use emojis within paragraph text except for:
 | `{{ CLEARANCE_NAME }}` | Lookup from `.shodann/clearances.json` | `ORANGE` |
 | `{{ CLEARANCE_NUMBER }}` | Numeric clearance (1-6) | `3` |
 | `{{ CURRENT_WEEK }}` | Environment variable | `6` |
-| `{{ PR_COUNT }}` | From citizen history file | `5` |
+| `{{ PR_COUNT }}` | Citizen history, already incremented for this one | `5` |
 | `{{ PREV_COVERAGE }}` | From citizen history file, carries its own unit | `45%` |
 | `{{ CURRENT_COVERAGE }}` | From pytest-cov, or `not instrumented` | `52%` |
 | `{{ COVERAGE_DELTA }}` | Calculated, or `not instrumented` | `+7%` |

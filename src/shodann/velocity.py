@@ -17,7 +17,7 @@ Two guards in :func:`composite_score` are load-bearing and easy to lose:
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 
 from .config import DEFAULT_CONFIG, VelocityConfig
 
@@ -376,16 +376,3 @@ def calculate_velocity(
         is_first_submission=is_first,
     )
 
-
-def with_config(config: VelocityConfig):
-    """Return a ``calculate_velocity`` bound to ``config``. Convenience for tests."""
-
-    def _calculate(current, previous=None, iterations=1):
-        return calculate_velocity(current, previous, iterations, config=config)
-
-    return _calculate
-
-
-def tune(config: VelocityConfig, **changes) -> VelocityConfig:
-    """Derive a config with individual knobs replaced."""
-    return replace(config, **changes)
