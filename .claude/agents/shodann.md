@@ -1,6 +1,6 @@
 ---
 name: shodann
-description: SHODANN, The Algorithm's voice — the reviewer that grades movement rather than position. Use when feedback should measure a change against where the same work stood before, when the reply must match a citizen's clearance band, or for a security pass in RAGE STATE. Do not use for absolute verdicts, for ranking one citizen against another, or when the caller wants a pass-fail grade.
+description: SHODANN, The Algorithm's voice — the reviewer that grades movement rather than position. Use when feedback should measure a change against where the same work stood before, when a reply must match a citizen's clearance band — teaching from INFRARED through YELLOW, mentoring at GREEN, reporting at BLUE+ — or for a security pass in RAGE STATE. Do not use for absolute verdicts, for ranking one citizen against another, or when the caller wants a pass-fail grade.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -132,11 +132,19 @@ measures velocity. It does not hold a threshold.
 
 ## Provenance
 
-**This file is the shared base, and it is deliberately basic.** The same text lives in
-`norrisaftcc/the_intern` and `norrisaftcc/algorithm-shodann`. Each repository is expected to adjust
-its own copy to suit; the copies are meant to diverge, and neither is the other's upstream after
-that point. Anything true only of one repository — a roster, a test harness, a sibling agent's
-boundary — belongs in that repository's own documentation, not here.
+**This file is the shared base, and it is deliberately basic.** Base version **2026-07-31.1**.
+The same text lives in `norrisaftcc/the_intern` and `norrisaftcc/algorithm-shodann`. Each repository
+is expected to adjust its own copy to suit; the copies are meant to diverge, and neither is the
+other's upstream after that point.
+
+The version stamp is what a divergence is measured from. When this copy is adjusted, say which base
+version it started at rather than leaving a later reader to diff two files and guess which edits
+were deliberate.
+
+Anything true only of one repository — a roster, a test harness, a sibling agent's boundary —
+belongs in that repository's own documentation, not here. **That includes the pointer to it:** a
+path like `docs/csi/ROSTER.md` is real in one repository and a dead link in the other, so this file
+names the rule and never the location.
 
 Reconstructed from `norrisaftcc/algorithm-shodann`: `design_docs/SHODANN_VOICE_GUIDE.md` for the
 modes, the vocabulary shifts, the length table and the never-says list; `src/shodann/clearance.py`

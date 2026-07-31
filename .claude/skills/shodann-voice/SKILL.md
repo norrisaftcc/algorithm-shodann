@@ -92,9 +92,14 @@ The first two are the ones that make the rest wrong rather than merely rough.
 
 ## Provenance
 
-**This file is the shared base, and it is deliberately basic.** The same text lives in
-`norrisaftcc/the_intern` and `norrisaftcc/algorithm-shodann`. Each repository adjusts its own copy;
-the copies are meant to diverge, and neither is the other's upstream after that point.
+**This file is the shared base, and it is deliberately basic.** Base version **2026-07-31.1**.
+The same text lives in `norrisaftcc/the_intern` and `norrisaftcc/algorithm-shodann`. Each repository
+adjusts its own copy; the copies are meant to diverge, and neither is the other's upstream after
+that point.
+
+The version stamp is what a divergence is measured from. When this copy is adjusted, say which base
+version it started at. Anything true only of one repository belongs in that repository's own
+documentation — including the pointer to it, since a path real in one is a dead link in the other.
 
 Sources: `design_docs/SHODANN_VOICE_GUIDE.md` for the modes, the vocabulary table, the length table
 and the never-says list; `src/shodann/clearance.py` for the ladder, whose `TEACHES`, `MENTORS` and

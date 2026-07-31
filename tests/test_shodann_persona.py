@@ -13,6 +13,7 @@ Those come from `src/shodann/clearance.py` and
 them is a change to what SHODANN is, not a local adjustment.
 """
 
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +84,12 @@ def test_both_files_declare_they_are_a_shared_base() -> None:
         text = path.read_text(encoding="utf-8")
         assert "shared base" in text.lower()
         assert "the_intern" in text, f"{path.name} does not name the other copy"
+
+        # The stamp is what a divergence is measured from. Without it, a later
+        # reader diffs two files and has to guess which edits were deliberate.
+        assert re.search(r"[Bb]ase version\s*\**\s*\d{4}-\d{2}-\d{2}\.\d+", text), (
+            f"{path.name} claims to be a shared base but states no base version"
+        )
 
 
 def test_readme_lists_shodann_as_maintained() -> None:
