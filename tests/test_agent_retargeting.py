@@ -24,9 +24,13 @@ def test_linx_agent_is_retargeted_to_shodann() -> None:
         "validator.py",
         "400 words",
         "clearance-appropriate",
-        "tools: read, grep, glob, bash",
     ):
         assert required in agent_text, f"Agent is missing SHODANN-specific guidance: {required}"
+
+    tools_line = next((line for line in agent_text.splitlines() if line.startswith("tools:")), "")
+    assert tools_line, "Agent is missing a tools: frontmatter line"
+    tools = {tool.strip() for tool in tools_line.split(":", 1)[1].split(",") if tool.strip()}
+    assert tools == {"read", "grep", "glob", "bash"}
 
     assert "src/shodann/validator.py" in agent_text
     assert "400-word cap" in agent_text
