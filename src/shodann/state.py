@@ -367,7 +367,6 @@ class CitizenRecord:
     def to_dict(self) -> dict:
         payload = {
             "citizen": self.citizen,
-            "channel": self.channel,
             "kind": self.kind,
             "display": asdict(self.display),
             "clearance_level": self.clearance_level,
@@ -384,7 +383,8 @@ class CitizenRecord:
             "last_degradation": self.last_degradation,
             "coverage_instrumented": self.coverage_instrumented,
             # Appended, never interleaved. Other modules and the live file read
-            # this shape, and the two new keys go last so no existing key moves.
+            # this shape, and the new keys go last so no existing key moves.
+            "channel": self.channel,
             "discontinuities": list(self.discontinuities),
             "schema_version": self.schema_version,
         }

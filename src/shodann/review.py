@@ -94,9 +94,10 @@ def pr_facts(event: dict) -> dict:
     repository = event.get("repository") or {}
     owner = repository.get("owner") or {}
     repository_name = repository.get("name") or "repository"
+    owner_name = owner.get("login") or "unknown"
     return {
         "citizen": user.get("login") or "unknown-citizen",
-        "channel": repository.get("full_name") or f"{owner.get('login') or 'unknown'}/{repository_name}",
+        "channel": repository.get("full_name") or f"{owner_name}/{repository_name}",
         "number": pull.get("number") or 0,
         "title": pull.get("title") or "(untitled)",
         "files_changed": pull.get("changed_files") or 0,

@@ -466,7 +466,7 @@ def test_to_dict_key_order_is_unchanged_and_new_keys_are_appended() -> None:
         "last_degradation",
         "coverage_instrumented",
     ]
-    assert keys[16:] == ["discontinuities", "schema_version"]
+    assert keys[16:] == ["channel", "discontinuities", "schema_version"]
 
 
 def test_no_maintained_key_leaks_into_extra() -> None:
