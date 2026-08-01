@@ -91,8 +91,12 @@ def pr_facts(event: dict) -> dict:
     """Pull the submission facts out of a GitHub pull_request event payload."""
     pull = event.get("pull_request") or {}
     user = pull.get("user") or {}
+    repository = event.get("repository") or {}
+    owner = repository.get("owner") or {}
+    repository_name = repository.get("name") or "repository"
     return {
         "citizen": user.get("login") or "unknown-citizen",
+        "channel": repository.get("full_name") or f"{owner.get('login') or 'unknown'}/{repository_name}",
         "number": pull.get("number") or 0,
         "title": pull.get("title") or "(untitled)",
         "files_changed": pull.get("changed_files") or 0,
@@ -577,7 +581,7 @@ def review(
         if reports_dir is not None
         else AnalysisReports()
     )
-    record = load_citizen_history(facts["citizen"], root)
+    record = load_citizen_history(facts["citizen"], root, channel=facts["channel"])
     # The file wins over the ledger. The ledger keeps round-tripping the band
     # so history stays readable, but the instructor's file is the source: a
     # promotion has to take effect on the next review, not whenever the stored
@@ -661,6 +665,7 @@ def review(
             root,
             degradation=degradation,
             coverage_instrumented=reports.coverage_instrumented,
+            channel=facts["channel"],
         )
     return body
 
