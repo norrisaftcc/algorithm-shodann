@@ -234,6 +234,7 @@ class Display:
 @dataclass
 class CitizenRecord:
     citizen: str
+    channel: str | None = None
     kind: str = KIND_HUMAN
     display: Display = field(default_factory=Display)
     clearance_level: int = 2
@@ -321,6 +322,7 @@ class CitizenRecord:
         metrics = data.get("last_metrics")
         return cls(
             citizen=data["citizen"],
+            channel=data.get("channel"),
             kind=data.get("kind", KIND_HUMAN),
             display=Display(
                 visibility=display.get("visibility", VISIBILITY_ANONYMOUS),
@@ -381,7 +383,8 @@ class CitizenRecord:
             "last_degradation": self.last_degradation,
             "coverage_instrumented": self.coverage_instrumented,
             # Appended, never interleaved. Other modules and the live file read
-            # this shape, and the two new keys go last so no existing key moves.
+            # this shape, and the new keys go last so no existing key moves.
+            "channel": self.channel,
             "discontinuities": list(self.discontinuities),
             "schema_version": self.schema_version,
         }
@@ -469,7 +472,12 @@ def _as_version(value) -> int:
         return 1
 
 
-def load_citizen_history(citizen: str, root: Path | str = ".") -> CitizenRecord:
+def load_citizen_history(
+    citizen: str,
+    root: Path | str = ".",
+    *,
+    channel: str | None = None,
+) -> CitizenRecord:
     """Read a citizen's ledger, or return a fresh record if they are new.
 
     A malformed file is treated as a new citizen rather than an exception:
@@ -497,13 +505,16 @@ def load_citizen_history(citizen: str, root: Path | str = ".") -> CitizenRecord:
     path = citizen_path(citizen, root)
     try:
         with path.open(encoding="utf-8") as handle:
-            return CitizenRecord.from_dict(json.load(handle))
+            record = CitizenRecord.from_dict(json.load(handle))
     except FileNotFoundError:
         # Ordered first: it is an OSError subclass, and it is the one absence
         # that must not look like damage.
-        return CitizenRecord(citizen=citizen)
+        return CitizenRecord(citizen=citizen, channel=channel)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError):
-        return CitizenRecord(citizen=citizen, unreadable_source=path)
+        return CitizenRecord(citizen=citizen, channel=channel, unreadable_source=path)
+    if channel is not None:
+        record.channel = channel
+    return record
 
 
 def compute_trend(history: list[dict]) -> str:
@@ -534,6 +545,7 @@ def save_citizen_history(
     now: str | None = None,
     degradation: str | None = None,
     coverage_instrumented: bool = False,
+    channel: str | None = None,
 ) -> CitizenRecord:
     """Fold one submission into the citizen's ledger and write it atomically.
 
@@ -546,7 +558,10 @@ def save_citizen_history(
     moment at which neither copy exists.
     """
     timestamp = now or utcnow()
-    record = load_citizen_history(citizen, root)
+    record = load_citizen_history(citizen, root, channel=channel)
+
+    if channel is not None:
+        record.channel = channel
 
     record.pr_count += 1
     record.last_metrics = metrics

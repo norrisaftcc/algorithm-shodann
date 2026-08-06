@@ -57,6 +57,24 @@ def test_round_trip(tmp_path) -> None:
     assert reloaded.first_submission is not None
 
 
+def test_channel_is_stored_on_the_citizen_record(tmp_path) -> None:
+    submit(tmp_path, citizen="octocat")
+    record = save_citizen_history(
+        "octocat",
+        CodeMetrics(coverage=45.0),
+        calculate_velocity(CodeMetrics(coverage=45.0), None, 1),
+        tmp_path,
+        channel="algocratic/futures",
+    )
+
+    assert record.channel == "algocratic/futures"
+    reloaded = load_citizen_history("octocat", tmp_path, channel="algocratic/futures")
+    assert reloaded.channel == "algocratic/futures"
+
+    payload = json.loads(citizen_path("octocat", tmp_path).read_text(encoding="utf-8"))
+    assert payload["channel"] == "algocratic/futures"
+
+
 def test_streak_survives_a_reload(tmp_path) -> None:
     """The retired engine wrote 'streak' and read 'iterationStreak', so this always read 0."""
     submit(tmp_path)
@@ -448,7 +466,7 @@ def test_to_dict_key_order_is_unchanged_and_new_keys_are_appended() -> None:
         "last_degradation",
         "coverage_instrumented",
     ]
-    assert keys[16:] == ["discontinuities", "schema_version"]
+    assert keys[16:] == ["channel", "discontinuities", "schema_version"]
 
 
 def test_no_maintained_key_leaks_into_extra() -> None:

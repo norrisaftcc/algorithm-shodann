@@ -105,6 +105,16 @@ def test_base_template_renders_with_nothing_left_unresolved() -> None:
     assert "EMOJI]" not in rendered
 
 
+def test_render_prompt_finds_the_templates_outside_the_current_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    rendered = render_prompt(sample_context(), prompts_dir="prompts")
+
+    assert "SHODANN" in rendered
+    assert "{{" not in rendered
+
+
 def test_build_context_supplies_every_variable_the_template_declares() -> None:
     """Enumerate the template's variables rather than trusting a hand-written list."""
     source = extract_template(PROMPTS / BASE_TEMPLATE)

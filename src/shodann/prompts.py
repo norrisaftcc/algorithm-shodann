@@ -53,7 +53,7 @@ __all__ = [
     "render_template_text",
 ]
 
-PROMPTS_DIR = Path("prompts")
+PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 BASE_TEMPLATE = "01_base_shodann_prompt.md"
 
 TEMPLATE_BEGIN = "<!-- TEMPLATE:BEGIN -->"
@@ -448,6 +448,18 @@ def describe_history(record: CitizenRecord, result: VelocityResult) -> str:
     )
 
 
+def _resolve_prompts_dir(prompts_dir: Path | str) -> Path:
+    """Resolve a prompt directory without depending on the process working directory."""
+    path = Path(prompts_dir)
+    if path.is_absolute():
+        return path
+    if path.exists():
+        return path
+    repo_root = Path(__file__).resolve().parents[2]
+    fallback = repo_root / path
+    return fallback if fallback.exists() else path
+
+
 def render_prompt(
     context: dict,
     *,
@@ -461,7 +473,7 @@ def render_prompt(
     calibration, RAGE STATE and the edge-case handlers each replace or extend
     this and are not wired up yet.
     """
-    path = Path(prompts_dir) / template
+    path = _resolve_prompts_dir(prompts_dir) / template
     return render_template_text(
         extract_template(path),
         context,
