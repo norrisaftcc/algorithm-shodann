@@ -5,9 +5,22 @@ document a future session will act on.
 
 ## What it is
 
-`.claude/skills/the-algorithm/` holds a vendored copy of `norrisaftcc/the-algorithm`,
-pinned in `PROVENANCE.md`. **Never edit it here.** Amend upstream, through its
-own gate, then re-vendor and update the commit.
+`.claude/skills/the-algorithm/` holds a vendored copy of
+`algocratic/the-algorithm-lite`, pinned in `PROVENANCE.md`. **Never edit it
+here.** Amend upstream, through its own gate, then re-vendor and update the
+commit.
+
+Since 2026-08-06 the local `SKILL.md` is upstream's **`SKILL-mini.md`** — 10,809
+bytes against the 18,875 it replaced, a 43% cut in what loads whenever the skill
+is invoked. Equivalence is certified by a frozen upstream amendment across 24
+clauses; all six fixed strings and all seven gate-integrity clauses were checked
+locally after the swap.
+
+**One trap that came with it.** `SKILL-mini.md` adds a `Clearance C` section the
+full v2 never had — RED default, ORANGE/YELLOW/GREEN requiring live human notice.
+**That is not SHODANN's clearance ladder.** Same colour names, different ladder,
+exactly like the PRISM collision `CLAUDE.md` already warns about. Do not let one
+leak into the other.
 
 It is a discipline for working with language models under a gate: **negotiate,
 freeze, execute, verify.** It has two operations and no others.
