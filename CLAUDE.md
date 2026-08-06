@@ -10,9 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `src/shodann/` — the implementation. Velocity engine, prompt assembly, output validator, groundedness probe, clearance calibration, capability declaration, citizen ledger.
 - `.github/workflows/shodann.yml` — live, two jobs, posts a comment on every PR to this repo.
-- `tests/` — 467 tests, including golden tests against the JS oracle, contract tests that read the workflow YAML as text, and groundedness probes that read the assembled output. One test is skipped on purpose (`reduced_allocation` is not synthesised); any other skip is a bug — see the guard rule in Landmines.
-- `design_docs/sprints/2026-07-28/` — one sprint, documented end to end: `01-candidates.md` (the live backlog — 37 surveyed items plus nine filed since, and a Closure section that is the only place recording which are done), `02-prediction.md`, `03-treatment.md`, `04-retro.md`, `05-assay.md`.
-- `.claude/skills/the-algorithm/` — a vendored discipline, pinned by commit. **Never edited here.** See `design_docs/addenda/the-algorithm.md`.
+- `tests/` — 474 tests, including golden tests against the JS oracle, contract tests that read the workflow YAML as text, and groundedness probes that read the assembled output. One test is skipped on purpose (`reduced_allocation` is not synthesised); any other skip is a bug — see the guard rule in Landmines.
+- `design_docs/sprints/2026-07-28/` — one sprint, documented end to end: `01-candidates.md` (the live backlog — 37 surveyed items plus ten filed since, and a Closure section that is the only place recording which are done), `02-prediction.md`, `03-treatment.md`, `04-retro.md`, `05-assay.md`.
+- `.claude/skills/the-algorithm/` — a vendored discipline, pinned by commit in `PROVENANCE.md`. **Never edited here**; amend upstream, through its own gate, then re-vendor. See `design_docs/addenda/the-algorithm.md`.
+- `.claude/skills/shodann-voice/` and `.claude/agents/shodann.md` — the persona and the register, **governed by the opposite rule to the skill above**. They are a *shared base*, byte-identical to the copies in `norrisaftcc/the_intern` and stamped `2026-07-31.1`; the two repositories are **expected to diverge**. Editing them here is allowed and anticipated — say which base version the change started from, because the stamp is what a divergence is measured against. Neither copy is the other's upstream, so never re-vendor one over the other.
 - `design_docs/growth-velocity.js` — the **reference oracle**, not the runtime. Kept so the port stays checkable. Do not extend it.
 - `design_docs/shodann-core.yml` — the historical 5-job draft. Never deployed, unsafe as written (see Landmines 1). Read it for the literal tool invocations; do not copy it.
 
@@ -34,6 +35,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 They disagree constantly (see Landmines). `design_docs/README.md` sets the last rule itself: files directly in `design_docs/` are current; anything under `shodann-architecture-prototype/` is historical, corroborating only. Prose restatements of the velocity formula in `PRD.md` and `SHODANN_CLAUDE.md` are all partial.
 
 Since the port, **`src/shodann/` outranks everything**, including `growth-velocity.js`. The JS is the oracle the Python is *checked against*, not the source of truth about current behaviour — the two have deliberately diverged where the JS was wrong (Landmine 5) and where PRD invariants demanded it.
+
+The same rule settles the newest pair. `.claude/agents/shodann.md` and `.claude/skills/shodann-voice/SKILL.md` read like sources and are not: they are *derived* from `design_docs/SHODANN_VOICE_GUIDE.md` (modes, vocabulary table, never-says list) and `src/shodann/clearance.py` (the teaches → mentors → reports ladder, quoted there in condensed form). Where a condensation disagrees with the code, **the code wins** and the condensation is the defect.
 
 ### Language: Python (decided 2026-07-25)
 
@@ -151,7 +154,7 @@ Edge-case detection (`05_edge_case_handlers.md`): `EMPTY_PR` = `files_changed ==
 
 ## Output contract and voice
 
-These rules govern **generated PR-comment output only** — not your replies to the user, commit messages, or issue text. Do not speak in the SHODANN persona while working on the repo.
+These rules govern **generated PR-comment output only** — not your replies to the user, commit messages, or issue text. Do not speak in the SHODANN persona while working on the repo — with one exception, the `shodann` agent seat (`.claude/agents/shodann.md`), which is the persona made dispatchable. It holds no `Write` or `Edit` tool, so "nothing is written" is a fact about its tool list rather than a promise in its prose; keep it that way.
 
 Standard path, exact headings in order:
 
@@ -201,7 +204,7 @@ These were written against the specs, before the port. **3, 5, 6, 7 and 9 are re
 
 Four more, learned from running it:
 
-- **A green suite proves very little here.** Twenty-five defects in `EARLY_RUNS.md`, all found by running the system, all with the suite passing — including three that were contracts *between the workflow YAML and the program*, which no test could see until `tests/test_workflow_contract.py` started reading the YAML as text. **Revert every new guard against the defect it was written for before believing it.** Nine probes were run that way on 2026-07-29 and one guard had been green since birth against nothing. Reverting is necessary and not sufficient: a guard **scoped to the thing you changed** passes its own revert and still misses the defect. Entry 18 took three attempts because two guards asserted on the prompt row that had already been fixed, while the figure was arriving from `describe_history` all along. Assert on the assembled output, not on your edit. And a guard that never runs is worse than one scoped too narrowly: entry 25 found a test parametrised over three files that skipped all three for its whole life, so `sss` read as a pass. **Check that a new test executes at all** - a skip and a pass are one character apart in a summary line.
+- **A green suite proves very little here.** Twenty-five defects in `EARLY_RUNS.md`, all found by running the system, all with the suite passing — including three that were contracts *between the workflow YAML and the program*, which no test could see until `tests/test_workflow_contract.py` started reading the YAML as text. **Revert every new guard against the defect it was written for before believing it.** Nine probes were run that way on 2026-07-29 and one guard had been green since birth against nothing. Reverting is necessary and not sufficient: a guard **scoped to the thing you changed** passes its own revert and still misses the defect. Entry 18 took three attempts because two guards asserted on the prompt row that had already been fixed, while the figure was arriving from `describe_history` all along. Assert on the assembled output, not on your edit. And a guard that never runs is worse than one scoped too narrowly: entry 25 found a test parametrised over three files that skipped all three for its whole life, so `sss` read as a pass. **Check that a new test executes at all** - a skip and a pass are one character apart in a summary line. That YAML-as-text family now covers `.claude/` markdown too (`tests/test_shodann_persona.py`, `tests/test_agent_retargeting.py`), and **they pin the persona, not the prose** — movement-not-position, the twice-changing ladder, the 400-word cap, the absent `Write` tool, the never-says list. Pinning the text would fight the divergence those files are designed for and break on the first legitimate edit; do not "tighten" them into a byte-comparison.
 - **A loop is evidence that a boundary is wrong.** The floor is Audience, Scope, Format, Path (`design_docs/addenda/the-algorithm.md`); an unterminating loop implicates one or more and *always* implicates **Scope**, because the other three produce one wrong artifact while only a wrong boundary produces another pass. Four for four on PR #61 (entry 25). So count the passes: three attempts at one defect is not persistence, it is a scope you have not restated. And measure the rate, not just the count - **commit interval below time-to-observe-consequence** means you are landing changes on top of unobserved change, which is the one condition the suite cannot see because the suite stays green throughout it.
 - **Anything feeding the score must not be choosable by the citizen being scored.** `--cov=.` counted a student's own test files in the coverage denominator, and `ruff check` without `--isolated` let their `pyproject.toml` decide which rules were counted. Both were live; both are now asserted in `tests/test_workflow_contract.py`. **The third instance was a file, not a flag**: nothing deleted the report files first, so a citizen could commit a `coverage.json` claiming 97% and break their own test collection to make it survive (`EARLY_RUNS.md` 12). Reading the flags again would never have found it. This is the lines-of-code metric in a new unit — check any new signal against it before adding one, and ask what the citizen could *put in the checkout*, not only what they could configure.
 - **The freeze is a deadline, not a preference.** `PRD.md` §8 freezes the measurement set for cohort 1, so a defect in a *measurement* is free to fix today and impossible after the first real submission — fixing it later invalidates every student's history. Adding a signal stays legal mid-cohort; changing or removing one does not. Sort measurement work by that clock, not by value.
@@ -224,7 +227,7 @@ Four more, learned from running it:
 | Question | File |
 |---|---|
 | **What broke when it ran, and why** | `design_docs/EARLY_RUNS.md` |
-| **The live backlog — 46 items, and which are closed** | `design_docs/sprints/2026-07-28/01-candidates.md` |
+| **The live backlog — 47 items, and which are closed** | `design_docs/sprints/2026-07-28/01-candidates.md` |
 | How this repo negotiates, and the floor test | `design_docs/addenda/the-algorithm.md` |
 | Why correct changes still compound into a problem | `design_docs/addenda/accumulation.md` |
 | What a second repository would need to subscribe (it cannot today) | `design_docs/ONBOARDING_A_REPOSITORY.md` |
@@ -237,7 +240,9 @@ Four more, learned from running it:
 | What a model may not say about a number it was given | `src/shodann/groundedness.py` |
 | Clearance postures (teaches → mentors → reports) | `design_docs/CLEARANCE_REGISTER.md` |
 | Leaderboard partition: human vs agent, ORANGE gate | `design_docs/LEADERBOARD.md` |
-| The agent fleet, its three epistemic positions | `.claude/agents/README.md` |
+| The agent fleet: five maintained agents, three epistemic positions, what each was exercised on, and the retargeting order for the inherited ones — an agent is done when it has produced a usable result on live work here, not when its prompt reads well | `.claude/agents/README.md` |
+| The register without the seat — modes, the ladder, the divergence rule and its version stamp | `.claude/skills/shodann-voice/SKILL.md` |
+| Season one as the engine measured it, frozen and never updated | `design_docs/pilot/README.md` |
 | Scope, out-of-scope, Gherkin acceptance criteria, error handling | `PRD.md` |
 | Pipeline rationale, hard/soft split, integration points | `design_docs/SHODANN_CLAUDE.md` |
 | Voice: vocabulary, forbidden phrases, emoji sets, clearance buckets | `design_docs/SHODANN_VOICE_GUIDE.md` |
