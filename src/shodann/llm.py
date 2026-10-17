@@ -25,6 +25,13 @@ than a second pile of HTTP.
 The fallback exists for the case the deployment actually has: no local model
 available, and a review still owed to a citizen.
 
+Anthropic can also be the *primary*: ``SHODANN_LLM_WIRE=anthropic`` declares
+it, the same way the fallback's wire is declared, never sniffed. Request
+shaping then follows the newer models' rules rather than the OpenAI wire's: no
+``temperature`` unless an operator sets one (Haiku 5.5 answers a non-default
+value with a 400, which this module would turn into a silent degraded comment
+that names no cause), and ``output_config.effort`` only when one is set.
+
 Nothing here retries on a bad *response* - that is the validator's job, and it
 knows what "bad" means. This retries on a flaky *connection* only.
 """
@@ -39,6 +46,7 @@ from dataclasses import dataclass, field
 
 __all__ = [
     "DEFAULT_FALLBACK_MODEL",
+    "EFFORT_LEVELS",
     "WIRE_ANTHROPIC",
     "WIRE_OPENAI",
     "LLMConfig",
@@ -49,6 +57,10 @@ __all__ = [
 
 DEFAULT_TIMEOUT = 45
 DEFAULT_MAX_TOKENS = 900
+DEFAULT_OPENAI_TEMPERATURE = 0.4
+
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+"""The values ``output_config.effort`` accepts. Anything else is a typo."""
 
 WIRE_OPENAI = "openai"
 WIRE_ANTHROPIC = "anthropic"
@@ -91,16 +103,44 @@ class LLMConfig:
 
     timeout: int = DEFAULT_TIMEOUT
     max_tokens: int = DEFAULT_MAX_TOKENS
-    temperature: float = 0.4
+    temperature: float | None = DEFAULT_OPENAI_TEMPERATURE
+    """``None`` means "send nothing", which the Anthropic wire honours.
+
+    The default stays 0.4 so a literal ``LLMConfig(...)`` keeps its meaning on
+    the OpenAI wire. ``from_env`` sets ``None`` on the Anthropic wire unless an
+    operator asks for a value: current Haiku models reject any non-default
+    sampling parameter.
+    """
+
+    effort: str | None = None
+    """``output_config.effort`` for the Anthropic wire; ignored on the OpenAI wire."""
 
     @classmethod
     def from_env(cls, environ: dict | None = None) -> LLMConfig:
+        """Read the primary model from ``SHODANN_LLM_*``.
+
+        Every variable is read as "blank means unset": an unset GitHub Actions
+        variable arrives as the empty string, not as an absent key.
+
+        Raises ``ValueError`` naming the variable for a wire, effort or
+        temperature that is not one of the allowed values. Silence would be
+        worse: a typo in ``SHODANN_LLM_WIRE`` would pick the OpenAI wire and
+        send a request the provider cannot parse.
+        """
         env = environ if environ is not None else os.environ
+        wire = _wire(env.get("SHODANN_LLM_WIRE"), "SHODANN_LLM_WIRE")
+        temperature = _optional_float(env.get("SHODANN_LLM_TEMPERATURE"), "SHODANN_LLM_TEMPERATURE")
+        if temperature is None and wire == WIRE_OPENAI:
+            temperature = DEFAULT_OPENAI_TEMPERATURE
         return cls(
-            base_url=env.get("SHODANN_LLM_BASE_URL", "").rstrip("/"),
-            model=env.get("SHODANN_LLM_MODEL", ""),
-            api_key=env.get("SHODANN_LLM_API_KEY", ""),
-            timeout=int(env.get("SHODANN_LLM_TIMEOUT", DEFAULT_TIMEOUT)),
+            base_url=_text(env.get("SHODANN_LLM_BASE_URL")).rstrip("/"),
+            model=_text(env.get("SHODANN_LLM_MODEL")),
+            api_key=env.get("SHODANN_LLM_API_KEY") or "",
+            wire=wire,
+            timeout=int(env.get("SHODANN_LLM_TIMEOUT") or DEFAULT_TIMEOUT),
+            max_tokens=_positive_int(env.get("SHODANN_LLM_MAX_TOKENS"), DEFAULT_MAX_TOKENS),
+            temperature=temperature,
+            effort=_effort(env.get("SHODANN_LLM_EFFORT"), "SHODANN_LLM_EFFORT"),
         )
 
     @property
@@ -130,6 +170,12 @@ def fallback_from_env(environ: dict | None = None) -> LLMConfig | None:
 
     ``None`` rather than an unconfigured config, so a caller can tell "no
     fallback was set up" from "a fallback was set up and could not be reached".
+
+    Sampling is left to the model's default unless ``SHODANN_FALLBACK_TEMPERATURE``
+    is set. This used to send 0.4 always, which made
+    ``SHODANN_FALLBACK_MODEL=claude-haiku-5-5`` fail on every call: the model
+    rejects a non-default temperature, and the failure surfaced only as a
+    degraded comment.
     """
     env = environ if environ is not None else os.environ
     key = env.get("ANTHROPIC_API_KEY", "")
@@ -145,7 +191,45 @@ def fallback_from_env(environ: dict | None = None) -> LLMConfig | None:
         api_key=key,
         wire=WIRE_ANTHROPIC,
         timeout=_positive_int(env.get("SHODANN_LLM_TIMEOUT"), DEFAULT_TIMEOUT),
+        max_tokens=_positive_int(env.get("SHODANN_FALLBACK_MAX_TOKENS"), DEFAULT_MAX_TOKENS),
+        temperature=_optional_float(
+            env.get("SHODANN_FALLBACK_TEMPERATURE"), "SHODANN_FALLBACK_TEMPERATURE"
+        ),
+        effort=_effort(env.get("SHODANN_FALLBACK_EFFORT"), "SHODANN_FALLBACK_EFFORT"),
     )
+
+
+def _text(raw: str | None) -> str:
+    """A stripped string, with absent and blank both meaning empty."""
+    return (raw or "").strip()
+
+
+def _wire(raw: str | None, name: str) -> str:
+    value = _text(raw).lower()
+    if not value:
+        return WIRE_OPENAI
+    if value not in (WIRE_OPENAI, WIRE_ANTHROPIC):
+        raise ValueError(f"{name} must be '{WIRE_OPENAI}' or '{WIRE_ANTHROPIC}', got {raw!r}")
+    return value
+
+
+def _effort(raw: str | None, name: str) -> str | None:
+    value = _text(raw).lower()
+    if not value:
+        return None
+    if value not in EFFORT_LEVELS:
+        raise ValueError(f"{name} must be one of {', '.join(EFFORT_LEVELS)}, got {raw!r}")
+    return value
+
+
+def _optional_float(raw: str | None, name: str) -> float | None:
+    value = _text(raw)
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        raise ValueError(f"{name} must be a number, got {raw!r}") from None
 
 
 def _positive_int(raw: str | None, default: int) -> int:
@@ -181,8 +265,12 @@ def _generate_anthropic(prompt: str, config: LLMConfig, *, client=None) -> str:
     package down at import time.
 
     No `thinking` parameter: this model reframes facts that deterministic
-    tooling already established, and Haiku 4.5 predates adaptive thinking
-    anyway. Nothing here needs the model to reason its way to an answer.
+    tooling already established. Nothing here needs the model to reason its
+    way to an answer.
+
+    `temperature` and `output_config` are sent only when set. Haiku 5.5 returns
+    a 400 for any temperature other than the default, so an unconditional
+    value turns every call into a degraded comment.
     """
     try:
         import anthropic
@@ -190,13 +278,17 @@ def _generate_anthropic(prompt: str, config: LLMConfig, *, client=None) -> str:
         raise LLMUnavailable(f"the anthropic SDK is not installed: {missing}") from missing
 
     talker = client or anthropic.Anthropic(api_key=config.api_key, timeout=config.timeout)
+    request: dict = {
+        "model": config.model,
+        "max_tokens": config.max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if config.temperature is not None:
+        request["temperature"] = config.temperature
+    if config.effort:
+        request["output_config"] = {"effort": config.effort}
     try:
-        message = talker.messages.create(
-            model=config.model,
-            max_tokens=config.max_tokens,
-            temperature=config.temperature,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        message = talker.messages.create(**request)
     except anthropic.AnthropicError as error:
         # Every failure is the same outcome here - the citizen gets the
         # facts-only comment - so this catches the SDK's root rather than
@@ -218,14 +310,14 @@ def _generate_anthropic(prompt: str, config: LLMConfig, *, client=None) -> str:
 
 def _generate_openai(prompt: str, config: LLMConfig, *, opener=urllib.request.urlopen) -> str:
     """OpenAI-compatible `/chat/completions` - Gemini, Ollama, vLLM, and friends."""
-    payload = json.dumps(
-        {
-            "model": config.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": config.max_tokens,
-            "temperature": config.temperature,
-        }
-    ).encode("utf-8")
+    body = {
+        "model": config.model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": config.max_tokens,
+    }
+    if config.temperature is not None:
+        body["temperature"] = config.temperature
+    payload = json.dumps(body).encode("utf-8")
 
     headers = {"Content-Type": "application/json"}
     if config.api_key:
