@@ -13,7 +13,14 @@ requires-python = ">=3.11"
 # output feeds the velocity score; this one produces prose that the validator
 # checks and the groundedness probe re-checks against the facts. A client
 # release cannot move a citizen's baseline.
-dependencies = ["jinja2>=3.1", "anthropic>=0.40"]
+#
+# The floor is 0.78 because `SHODANN_LLM_EFFORT` sends `output_config={"effort":
+# ...}` to `messages.create`. Measured against the published wheels: 0.76 has no
+# `output_config` parameter at all (an operator who set an effort would get a
+# TypeError, which is not an AnthropicError and so is not degraded gracefully),
+# 0.77 has the parameter without an `effort` key, and 0.78 is the first release
+# whose `OutputConfigParam` carries `effort`.
+dependencies = ["jinja2>=3.1", "anthropic>=0.78"]
 
 [project.optional-dependencies]
 # Exact pins are for tools whose output feeds the velocity score. A routine

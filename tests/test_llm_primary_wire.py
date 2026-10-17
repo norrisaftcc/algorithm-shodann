@@ -388,3 +388,26 @@ def test_review_reads_an_anthropic_primary_from_the_environment(tmp_path, monkey
 
     assert "MINIMAL RESPONSE" not in body
     assert "temperature" not in client.seen[0]
+
+
+# --- the SDK floor ----------------------------------------------------------
+
+# Measured against the published wheels: `messages.create` has no `output_config`
+# parameter before 0.77, and `OutputConfigParam` carries `effort` from 0.78. An
+# older client raises TypeError on `SHODANN_LLM_EFFORT`, which is not an
+# `AnthropicError`, so it would escape the graceful-degradation handler.
+MINIMUM_SDK_WITH_EFFORT = (0, 78)
+
+
+def test_the_anthropic_dependency_floor_admits_only_sdks_that_know_effort() -> None:
+    import re
+    from pathlib import Path
+
+    project = (Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+    requirement = re.search(r'"anthropic>=(\d+)\.(\d+)[^"]*"', project)
+
+    assert requirement, "pyproject.toml no longer declares a lower bound for anthropic"
+    floor = (int(requirement.group(1)), int(requirement.group(2)))
+    assert floor >= MINIMUM_SDK_WITH_EFFORT, (
+        f"anthropic>={floor[0]}.{floor[1]} admits a client with no output_config.effort"
+    )

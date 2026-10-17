@@ -253,6 +253,25 @@ def test_every_python_entry_point_ignores_the_working_directory(reusable: str) -
         assert call.startswith("python -I "), f"working directory can shadow the engine: {call}"
 
 
+def test_the_only_python_the_privileged_job_runs_is_the_engines_own_module(
+    reusable: str,
+) -> None:
+    """`-I` alone is not enough: `python -I citizen/x.py` carries it too.
+
+    Every call must name an installed engine module with `-m`, so no path inside
+    the citizen's checkout is ever handed to an interpreter that holds the write
+    token and the model key.
+    """
+    review = _executable(_job(reusable, "review"))
+    calls = re.findall(r"^\s*(?:run:\s*)?(python(?![-\w])[^\n]*)", review, flags=re.MULTILINE)
+
+    assert calls, "no python invocation found; the pattern is matching nothing"
+    for call in calls:
+        assert re.match(r"python -I -m shodann\.(review|cli)\b", call), call
+    for hazard in ("bash citizen", "sh citizen", "./citizen", "source citizen", "citizen/.venv"):
+        assert hazard not in review, f"executes something from the citizen's checkout: {hazard}"
+
+
 def test_the_review_is_composed_against_the_citizen_root(reusable: str) -> None:
     compose = _executable(_step(reusable, "Compose the review"))
     ledger = _executable(_step(reusable, "Record the citizen ledger"))
