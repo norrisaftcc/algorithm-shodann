@@ -36,8 +36,18 @@ shodann-velocity = "shodann.cli:main"
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+# The prompt templates live in the top-level `prompts/` directory, which every
+# doc, test and `prompts/README.md` refers to by that name, so it is mapped into
+# the wheel as `shodann._prompts` rather than moved. Without this a wheel holds
+# 0 of the 7 `.md` files and `render_prompt` has nothing to read outside a
+# source checkout. `packages` is explicit because `packages.find` cannot see a
+# directory outside `src`.
+[tool.setuptools]
+package-dir = {"" = "src", "shodann._prompts" = "prompts"}
+packages = ["shodann", "shodann._prompts"]
+
+[tool.setuptools.package-data]
+"shodann._prompts" = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

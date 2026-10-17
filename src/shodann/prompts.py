@@ -30,6 +30,8 @@ Jinja, so variable substitution needed no rewriting. What did need handling:
 from __future__ import annotations
 
 import re
+from importlib import resources
+from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from jinja2 import Environment, StrictUndefined
@@ -42,9 +44,11 @@ from .velocity import CodeMetrics, VelocityResult
 
 __all__ = [
     "BASE_TEMPLATE",
+    "PACKAGED_PROMPTS",
     "PROMPTS_DIR",
     "UnsupportedTemplateSyntax",
     "build_context",
+    "default_prompts_dir",
     "describe_history",
     "describe_style_rules",
     "extract_template",
@@ -53,7 +57,13 @@ __all__ = [
     "render_template_text",
 ]
 
+# Where the templates live in a source checkout. Kept exported because tests and
+# docs import it; it is the first of two places `render_prompt` looks by default
+# (see `default_prompts_dir`), and it does not exist in an installed wheel.
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
+# The import name the top-level `prompts/` directory is shipped under. It is
+# mapped in pyproject.toml (`package-dir`), so the directory never moves.
+PACKAGED_PROMPTS = "shodann._prompts"
 BASE_TEMPLATE = "01_base_shodann_prompt.md"
 
 TEMPLATE_BEGIN = "<!-- TEMPLATE:BEGIN -->"
@@ -127,13 +137,14 @@ def find_pseudo_syntax(text: str) -> list[tuple[int, str]]:
     return found
 
 
-def extract_template(path: Path | str) -> str:
+def extract_template(path: Path | str | Traversable) -> str:
     """Pull the renderable region out of a prompt document.
 
     Raises if the markers are missing rather than guessing, because guessing
     would silently send a variable-reference table to the model.
     """
-    text = Path(path).read_text(encoding="utf-8")
+    source = path if isinstance(path, Traversable) else Path(path)
+    text = source.read_text(encoding="utf-8")
 
     if TEMPLATE_BEGIN not in text or TEMPLATE_END not in text:
         raise UnsupportedTemplateSyntax(
@@ -448,8 +459,48 @@ def describe_history(record: CitizenRecord, result: VelocityResult) -> str:
     )
 
 
+def _source_checkout_prompts() -> Path | None:
+    """The ``prompts/`` directory beside ``src/``, if this is a source checkout."""
+    candidate = PROMPTS_DIR
+    return candidate if (candidate / BASE_TEMPLATE).is_file() else None
+
+
+def _packaged_prompts() -> Traversable | None:
+    """The templates shipped inside the installed wheel, if there are any."""
+    try:
+        candidate = resources.files(PACKAGED_PROMPTS)
+    except (ModuleNotFoundError, TypeError):
+        return None
+    return candidate if candidate.joinpath(BASE_TEMPLATE).is_file() else None
+
+
+def default_prompts_dir() -> Path | Traversable:
+    """Find the prompt library without consulting the process working directory.
+
+    Order: the source checkout, then the installed package data. A source
+    checkout wins so that editing ``prompts/`` is visible to a developer who
+    also has the wheel installed. The working directory is never searched: a
+    citizen's repository can contain a ``prompts/`` of its own, and the privileged
+    job runs with that checkout as its working directory.
+    """
+    found = _source_checkout_prompts() or _packaged_prompts()
+    if found is None:
+        raise FileNotFoundError(
+            f"The SHODANN prompt library is not installed: {BASE_TEMPLATE} is neither in a "
+            f"source checkout ({PROMPTS_DIR}) nor in the package data ({PACKAGED_PROMPTS}). "
+            "Install the shodann wheel built from a tree that includes prompts/, or run from "
+            "a source checkout."
+        )
+    return found
+
+
 def _resolve_prompts_dir(prompts_dir: Path | str) -> Path:
-    """Resolve a prompt directory without depending on the process working directory."""
+    """Resolve an *explicit* prompt directory override.
+
+    A relative override is tried as given and then against the repository root.
+    This is only for a caller that named a directory; the default never comes
+    through here and never reads the working directory.
+    """
     path = Path(prompts_dir)
     if path.is_absolute():
         return path
@@ -464,7 +515,7 @@ def render_prompt(
     context: dict,
     *,
     template: str = BASE_TEMPLATE,
-    prompts_dir: Path | str = PROMPTS_DIR,
+    prompts_dir: Path | str | None = None,
     strip_comments: bool = True,
 ) -> str:
     """Render one prompt document against ``context``.
@@ -472,8 +523,13 @@ def render_prompt(
     Rung 1 renders the base template only. Mode selection, clearance
     calibration, RAGE STATE and the edge-case handlers each replace or extend
     this and are not wired up yet.
+
+    ``prompts_dir`` is an override for tests. Left as ``None`` it comes from
+    `default_prompts_dir`: the source checkout, else the installed package data,
+    else ``FileNotFoundError``.
     """
-    path = _resolve_prompts_dir(prompts_dir) / template
+    base = default_prompts_dir() if prompts_dir is None else _resolve_prompts_dir(prompts_dir)
+    path = base / template
     return render_template_text(
         extract_template(path),
         context,
