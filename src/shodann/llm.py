@@ -30,7 +30,9 @@ it, the same way the fallback's wire is declared, never sniffed. Request
 shaping then follows the newer models' rules rather than the OpenAI wire's: no
 ``temperature`` unless an operator sets one (Haiku 5.5 answers a non-default
 value with a 400, which this module would turn into a silent degraded comment
-that names no cause), and ``output_config.effort`` only when one is set.
+that names no cause), and ``output_config.effort`` only when one is set. An
+operator-set temperature travels in ``extra_body``, never as a keyword: the
+current SDK's ``Messages.create`` has no ``temperature`` parameter at all.
 
 Nothing here retries on a bad *response* - that is the validator's job, and it
 knows what "bad" means. This retries on a flaky *connection* only.
@@ -66,8 +68,6 @@ the model does not think first, and the failure is a truncated or empty answer
 rather than an error - see the ``max_tokens`` check in ``_generate_anthropic``.
 """
 DEFAULT_OPENAI_TEMPERATURE = 0.4
-DEFAULT_FALLBACK_TEMPERATURE = 0.4
-"""What the fallback sent before the Haiku 5 models existed; kept for models that accept it."""
 
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 """The values ``output_config.effort`` accepts. Anything else is a typo."""
@@ -86,21 +86,8 @@ one step that cannot invent a metric anyway.
 """
 
 
-_SAMPLING_REJECTING_PREFIXES = ("claude-haiku-5",)
-"""Models documented as answering any non-default ``temperature`` with a 400.
-
-A prefix, so ``claude-haiku-5-5`` and its dated snapshots are covered without
-this list needing an edit per release. Deliberately narrow: a model not named
-here keeps the previous behaviour, and a wrongly omitted temperature is
-invisible while a wrongly sent one is a degraded comment.
-"""
-
 _EFFORT_REJECTING_PREFIXES = ("claude-haiku-4",)
 """Models documented as rejecting ``output_config.effort``. Haiku 4.5 does."""
-
-
-def _rejects_sampling(model: str) -> bool:
-    return model.strip().lower().startswith(_SAMPLING_REJECTING_PREFIXES)
 
 
 def _rejects_effort(model: str) -> bool:
@@ -138,9 +125,11 @@ class LLMConfig:
     """``None`` means "send nothing", which the Anthropic wire honours.
 
     The default stays 0.4 so a literal ``LLMConfig(...)`` keeps its meaning on
-    the OpenAI wire. ``from_env`` sets ``None`` on the Anthropic wire unless an
-    operator asks for a value: current Haiku models reject any non-default
-    sampling parameter.
+    the OpenAI wire. ``from_env`` and ``fallback_from_env`` set ``None`` on the
+    Anthropic wire unless an operator asks for a value. That wire sends a
+    value through ``extra_body``, because the current SDK's
+    ``Messages.create`` has no ``temperature`` keyword (``TypeError``), and
+    Haiku 5.5 answers any non-default value with a 400.
     """
 
     effort: str | None = None
@@ -211,15 +200,14 @@ def fallback_from_env(environ: dict | None = None) -> LLMConfig | None:
     ``None`` rather than an unconfigured config, so a caller can tell "no
     fallback was set up" from "a fallback was set up and could not be reached".
 
-    **Temperature rule.** ``SHODANN_FALLBACK_TEMPERATURE`` wins when set. When
-    it is not, the fallback sends 0.4, as it always did, *except* for a model
-    documented as rejecting sampling parameters (the ``claude-haiku-5*``
-    family, ``_SAMPLING_REJECTING_PREFIXES``), which gets nothing. Sending 0.4
-    to Haiku 5.5 made every fallback call a 400 that surfaced only as a
-    degraded comment; omitting it everywhere changed the default fallback
-    ``claude-haiku-4-5`` from 0.4 to the API's own default for no reason a
-    citizen's review could see. Narrow on purpose: a model this does not name
-    keeps the earlier behaviour.
+    **Temperature rule.** The fallback sends no temperature, for any model.
+    ``SHODANN_FALLBACK_TEMPERATURE`` is honoured only when an operator sets
+    it, and it then goes out through ``extra_body``, not as a keyword. It used
+    to default to 0.4. That default could not be kept: the current SDK's
+    ``Messages.create`` has no ``temperature`` parameter, so the keyword is a
+    ``TypeError`` (not an ``AnthropicError``), and Haiku 5.5 answers any
+    non-default value with a 400. An operator who sets a value for a model
+    that rejects it owns the resulting degraded comment.
 
     **Effort.** ``SHODANN_FALLBACK_EFFORT`` is ignored when the model is known
     to reject ``output_config`` (Haiku 4.5, ``_EFFORT_REJECTING_PREFIXES``), so
@@ -242,8 +230,6 @@ def fallback_from_env(environ: dict | None = None) -> LLMConfig | None:
     temperature = _optional_float(
         env.get("SHODANN_FALLBACK_TEMPERATURE"), "SHODANN_FALLBACK_TEMPERATURE"
     )
-    if temperature is None and not _rejects_sampling(model):
-        temperature = DEFAULT_FALLBACK_TEMPERATURE
     return LLMConfig(
         model=model,
         api_key=key,
@@ -326,11 +312,20 @@ def _generate_anthropic(prompt: str, config: LLMConfig, *, client=None) -> str:
     tooling already established. Nothing here needs the model to reason its
     way to an answer.
 
-    `temperature` and `output_config` are sent only when set. Haiku 5.5 returns
-    a 400 for any temperature other than the default, so an unconditional
-    value turns every call into a degraded comment. `output_config.effort` is
-    dropped for a model known to reject it (Haiku 4.5), so one operator-wide
-    effort setting cannot break the model that cannot take it.
+    `temperature` and `output_config` are sent only when set. `temperature` is
+    not a parameter of the current SDK's `Messages.create` (1.x has no
+    `temperature`, `top_p` or `top_k`), so it goes in `extra_body`, which the
+    SDK merges into the JSON body without checking the signature. Haiku 5.5
+    returns a 400 for any temperature other than the default, so an
+    operator who sets one for that model gets a degraded comment naming the
+    API error. `output_config.effort` is dropped for a model known to reject
+    it (Haiku 4.5), so one operator-wide effort setting cannot break the model
+    that cannot take it.
+
+    A `TypeError` from `create` means the installed SDK does not accept a
+    keyword this module sends. It is not an `AnthropicError`, so it would
+    otherwise skip the fallback and the facts-only comment; it is reported as
+    an SDK mismatch instead.
 
     A `max_tokens` stop is `LLMUnavailable`, not a short review: thinking
     counts against the ceiling, so the answer can be cut off mid-sentence or
@@ -348,11 +343,16 @@ def _generate_anthropic(prompt: str, config: LLMConfig, *, client=None) -> str:
         "messages": [{"role": "user", "content": prompt}],
     }
     if config.temperature is not None:
-        request["temperature"] = config.temperature
+        request["extra_body"] = {"temperature": config.temperature}
     if config.effort and not _rejects_effort(config.model):
         request["output_config"] = {"effort": config.effort}
     try:
         message = talker.messages.create(**request)
+    except TypeError as error:
+        raise LLMUnavailable(
+            f"{config.describe()}: the installed anthropic SDK rejected the request "
+            f"keywords ({error}); pin a compatible SDK version"
+        ) from error
     except anthropic.AnthropicError as error:
         # Every failure is the same outcome here - the citizen gets the
         # facts-only comment - so this catches the SDK's root rather than

@@ -66,7 +66,8 @@ jobs:
       # the primary cannot be reached. Do NOT set `fallback-effort` while the
       # fallback model is Haiku 4.5 (the default): it rejects output_config.
       # The program drops effort for that model, but leave this blank anyway.
-      # `fallback-temperature` is unnecessary: Haiku 4.5 gets 0.4, Haiku 5.x none.
+      # `fallback-temperature` is unnecessary: no fallback model gets a
+      # temperature by default, and Haiku 5.5 answers a non-default one with a 400.
       # fallback-model: claude-haiku-4-5
       leaderboard: false
       record-ledger: true

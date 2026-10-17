@@ -70,7 +70,9 @@ on:
         type: string
         default: ''
       llm-temperature:
-        description: "Blank means the wire's default (omitted on the Anthropic wire)."
+        description: >-
+          Blank means the wire's default (omitted on the Anthropic wire). A value
+          is sent in extra_body there; Haiku 5.5 answers a non-default one with a 400.
         type: string
         default: ''
       llm-timeout:
@@ -78,8 +80,9 @@ on:
         default: ''
       # The `fallback-*` inputs apply only when ANTHROPIC_API_KEY is passed and
       # the primary could not answer. Blank means the program's default: model
-      # claude-haiku-4-5, temperature 0.4 (none for the claude-haiku-5* family),
-      # max tokens 2000.
+      # claude-haiku-4-5, no temperature, max tokens 2000. A value set in
+      # `fallback-temperature` is sent in the request's extra_body; Haiku 5.5
+      # answers a non-default temperature with a 400.
       fallback-model:
         type: string
         default: ''

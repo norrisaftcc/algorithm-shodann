@@ -6,10 +6,16 @@ degraded comment that names no cause. So a request that carries a temperature
 it should not have is not a loud failure here - it is a review that quietly
 stops using the model. Every test below that guards the request body asserts on
 what the fake SDK client actually received.
+
+The fake client binds its keywords to the *installed* SDK's real
+``Messages.create`` signature, so a keyword the SDK does not have fails here
+instead of in CI. The current SDK has no ``temperature`` parameter; an
+operator-set value is sent in ``extra_body``.
 """
 
 from __future__ import annotations
 
+import inspect
 import io
 import json
 from dataclasses import dataclass
@@ -59,6 +65,26 @@ class FakeClient:
         return Message(content=[Block(self._text)])
 
 
+def _installed_create_signature() -> inspect.Signature:
+    from anthropic.resources import Messages
+
+    return inspect.signature(Messages.create)
+
+
+class SignatureCheckedClient(FakeClient):
+    """A fake that refuses any keyword the installed SDK's `create` does not take.
+
+    `FakeClient.create(**kwargs)` accepts anything, which is how a `temperature`
+    keyword passed every unit test and then raised `TypeError` in CI against the
+    real SDK. Binding to the real signature makes the same call fail here.
+    """
+
+    def create(self, **kwargs):
+        # `None` stands in for `self`; `bind` raises TypeError on an unknown keyword.
+        _installed_create_signature().bind(None, **kwargs)
+        return super().create(**kwargs)
+
+
 # --- the sanity check that the parametrised lists below are not empty -------
 
 
@@ -75,7 +101,7 @@ def test_an_unset_wire_is_the_openai_wire_exactly_as_before() -> None:
         {"SHODANN_LLM_BASE_URL": "http://localhost:11434/v1/", "SHODANN_LLM_MODEL": "llama3.2"}
     )
     assert config.wire == WIRE_OPENAI
-    assert config.temperature == 0.4
+    assert config.temperature == 0.4, "the OpenAI wire keeps its 0.4"
     assert config.max_tokens == 900
     assert config.effort is None
     assert config.configured
@@ -247,6 +273,7 @@ def test_the_haiku_5_5_request_carries_no_temperature_and_the_configured_effort(
     sent = client.seen[0]
     assert sent["model"] == HAIKU_5_5
     assert "temperature" not in sent
+    assert "extra_body" not in sent
     assert sent["output_config"] == {"effort": "low"}
     assert sent["max_tokens"] == 2000
     assert sent["messages"] == [{"role": "user", "content": "prompt"}]
@@ -260,11 +287,12 @@ def test_no_effort_means_no_output_config() -> None:
     assert "temperature" not in client.seen[0]
 
 
-def test_an_explicit_temperature_is_sent_when_an_operator_sets_one() -> None:
+def test_an_explicit_temperature_is_sent_in_extra_body_when_an_operator_sets_one() -> None:
     client = FakeClient()
     config = LLMConfig.from_env({**PRIMARY_ENV, "SHODANN_LLM_TEMPERATURE": "1"})
     generate("p", config, client=client)
-    assert client.seen[0]["temperature"] == 1.0
+    assert client.seen[0]["extra_body"] == {"temperature": 1.0}
+    assert "temperature" not in client.seen[0], "not a keyword: the SDK has no such parameter"
 
 
 def test_effort_does_not_reach_the_openai_wire() -> None:
@@ -286,7 +314,7 @@ def test_effort_does_not_reach_the_openai_wire() -> None:
     assert "effort" not in json.dumps(seen[0])
 
 
-# --- the fallback no longer pins a temperature -------------------------------
+# --- the fallback sends no temperature unless an operator sets one -----------
 
 
 def test_a_haiku_5_fallback_sends_no_temperature_by_default() -> None:
@@ -303,22 +331,21 @@ def test_a_haiku_5_fallback_sends_no_temperature_by_default() -> None:
     assert client.seen[0]["max_tokens"] == 2000
 
 
-@pytest.mark.parametrize("model", [HAIKU_5_5, "claude-haiku-5-5-20260301", "Claude-Haiku-5-6"])
-def test_the_whole_haiku_5_family_is_spared_a_temperature(model: str) -> None:
+@pytest.mark.parametrize(
+    "model",
+    ["", HAIKU_5_5, "claude-haiku-5-5-20260301", "claude-haiku-4-5", "claude-sonnet-5"],
+)
+def test_no_fallback_model_gets_a_default_temperature(model: str) -> None:
+    """The old 0.4 default is gone for every model: the SDK has no such keyword."""
     config = fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_MODEL": model})
     assert config.temperature is None
-
-
-@pytest.mark.parametrize("model", ["", "claude-haiku-4-5", "claude-sonnet-5"])
-def test_every_other_fallback_keeps_the_previous_0_4(model: str) -> None:
-    """Dropping temperature everywhere changed the default fallback with no benefit."""
-    config = fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_MODEL": model})
     client = FakeClient()
     generate("p", config, client=client)
-    assert client.seen[0]["temperature"] == 0.4
+    assert "temperature" not in client.seen[0]
+    assert "extra_body" not in client.seen[0]
 
 
-def test_an_explicit_fallback_temperature_beats_the_model_rule() -> None:
+def test_an_explicit_fallback_temperature_is_honoured_for_any_model() -> None:
     config = fallback_from_env(
         {"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_MODEL": HAIKU_5_5,
          "SHODANN_FALLBACK_TEMPERATURE": "1"}
@@ -354,7 +381,8 @@ def test_the_fallback_temperature_is_read_from_the_environment() -> None:
     config = fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_TEMPERATURE": "0.7"})
     client = FakeClient()
     generate("p", config, client=client)
-    assert client.seen[0]["temperature"] == 0.7
+    assert client.seen[0]["extra_body"] == {"temperature": 0.7}
+    assert "temperature" not in client.seen[0]
 
 
 def test_the_fallback_effort_and_max_tokens_are_read() -> None:
@@ -382,7 +410,7 @@ def test_blank_fallback_variables_behave_as_unset(blank: str) -> None:
             "SHODANN_FALLBACK_MAX_TOKENS": blank,
         }
     )
-    assert config.temperature == 0.4, "blank is unset, and unset on Haiku 4.5 is the old 0.4"
+    assert config.temperature is None, "blank is unset, and unset sends no temperature"
     assert config.effort is None
     assert config.max_tokens == 2000
 
@@ -500,6 +528,66 @@ def test_the_anthropic_dependency_floor_admits_only_sdks_that_know_effort() -> N
     assert floor >= MINIMUM_SDK_WITH_EFFORT, (
         f"anthropic>={floor[0]}.{floor[1]} admits a client with no output_config.effort"
     )
+
+
+def test_every_keyword_sent_to_messages_create_exists_in_the_installed_sdk() -> None:
+    """The guard `FakeClient` cannot be.
+
+    `FakeClient.create(**kwargs)` accepts any keyword, so the 0.4 `temperature`
+    kwarg passed every test and then raised `TypeError` against the real SDK
+    in CI. This builds the request with every optional setting populated and
+    binds it to the *installed* `Messages.create` signature.
+    """
+    signature = _installed_create_signature()
+    assert "model" in signature.parameters, "the real signature did not load"
+
+    primary = LLMConfig.from_env(
+        {
+            **PRIMARY_ENV,
+            "SHODANN_LLM_TEMPERATURE": "1",
+            "SHODANN_LLM_EFFORT": "low",
+            "SHODANN_LLM_MAX_TOKENS": "1500",
+        }
+    )
+    fallback = fallback_from_env(
+        {
+            "ANTHROPIC_API_KEY": "k",
+            "SHODANN_FALLBACK_MODEL": HAIKU_5_5,
+            "SHODANN_FALLBACK_TEMPERATURE": "1",
+            "SHODANN_FALLBACK_EFFORT": "low",
+            "SHODANN_FALLBACK_MAX_TOKENS": "1500",
+        }
+    )
+    for config in (primary, fallback):
+        client = SignatureCheckedClient()
+        generate("p", config, client=client)  # raises TypeError on an unknown keyword
+        sent = client.seen[0]
+        assert {"output_config", "max_tokens", "extra_body"} <= set(sent), sent
+        assert "temperature" not in sent
+        assert sent["extra_body"] == {"temperature": 1.0}
+        assert sent["output_config"] == {"effort": "low"}
+        assert sent["max_tokens"] == 1500
+        assert set(sent) <= set(signature.parameters), sorted(set(sent) - set(signature.parameters))
+
+
+def test_the_signature_guard_rejects_a_keyword_the_sdk_does_not_have() -> None:
+    """The guard has teeth: the keyword that broke CI is refused by it."""
+    with pytest.raises(TypeError, match="temperature"):
+        SignatureCheckedClient().create(
+            model="m", max_tokens=1, messages=[], temperature=0.4
+        )
+
+
+class RejectingClient(FakeClient):
+    def create(self, **kwargs):
+        raise TypeError("create() got an unexpected keyword argument 'x'")
+
+
+def test_an_sdk_keyword_mismatch_degrades_to_the_fallback_instead_of_crashing() -> None:
+    from shodann.llm import LLMUnavailable
+
+    with pytest.raises(LLMUnavailable, match="SDK"):
+        generate("p", fallback_from_env({"ANTHROPIC_API_KEY": "k"}), client=RejectingClient())
 
 
 class ModelSensitiveClient(FakeClient):
