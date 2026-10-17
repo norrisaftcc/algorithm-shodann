@@ -231,6 +231,7 @@ Four more, learned from running it:
 | How this repo negotiates, and the floor test | `design_docs/addenda/the-algorithm.md` |
 | Why correct changes still compound into a problem | `design_docs/addenda/accumulation.md` |
 | How a second repository subscribes (reusable workflow `shodann-review.yml`, caller `templates/subscriber/shodann.yml`; copying `shodann.yml` is unsupported) | `design_docs/ONBOARDING_A_REPOSITORY.md` |
+| **How to test the Anthropic wire and the reusable workflow before a student repository subscribes** | `design_docs/TESTING_SHODANN_ON_HAIKU_5_5.md` |
 | Which documents are below floor, and where their operative sentences sit | `design_docs/sprints/2026-07-28/05-assay.md` |
 | Velocity math as shipped, guards, US-1.3 | `src/shodann/velocity.py` |
 | Citizen ledger, clearance names, atomic writes | `src/shodann/state.py` |
