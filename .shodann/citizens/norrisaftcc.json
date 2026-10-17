@@ -7,24 +7,28 @@
   },
   "clearance_level": 2,
   "first_submission": "2026-07-25T23:08:59Z",
-  "last_updated": "2026-07-31T02:03:15Z",
+  "last_updated": "2026-10-17T16:18:16Z",
   "baseline_established": true,
-  "pr_count": 21,
-  "iteration_streak": 21,
+  "pr_count": 22,
+  "iteration_streak": 22,
   "rage_state_encounters": 0,
   "last_metrics": {
     "coverage": 97.8,
-    "test_count": 370,
+    "test_count": 460,
     "complexity": 0,
-    "loc": 10686,
-    "functions": 586,
-    "docstrings": 447,
-    "lint_issues": 24,
+    "loc": 12333,
+    "functions": 707,
+    "docstrings": 501,
+    "lint_issues": 33,
     "syntax_errors": 0
   },
-  "last_velocity": 12.98,
-  "velocity_trend": "descending",
+  "last_velocity": 229.45,
+  "velocity_trend": "ascending",
   "velocity_history": [
+    {
+      "score": 229.45,
+      "date": "2026-10-17T16:18:16Z"
+    },
     {
       "score": 12.98,
       "date": "2026-07-31T02:03:15Z"
@@ -60,14 +64,11 @@
     {
       "score": 35.0,
       "date": "2026-07-26T15:27:45Z"
-    },
-    {
-      "score": 410.0,
-      "date": "2026-07-26T01:42:46Z"
     }
   ],
   "last_degradation": "no model configured",
   "coverage_instrumented": true,
+  "channel": "norrisaftcc/algorithm-shodann",
   "discontinuities": [
     {
       "date": "2026-07-25T23:08:59Z",
