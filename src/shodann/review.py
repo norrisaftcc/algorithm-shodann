@@ -642,10 +642,10 @@ def review(
             reports=reports,
         )
         # Note the asymmetry: `root` is the citizen's repository, but the
-        # prompt library is SHODANN's own and is read relative to the working
-        # directory. Rung 1 reviews this repository, so they coincide. They
-        # will not once SHODANN reviews someone else's repo, and at that point
-        # the templates need to ship as package data.
+        # prompt library is SHODANN's own. It is found beside the source
+        # checkout or inside the installed package (`default_prompts_dir`),
+        # never relative to the working directory, so a subscriber's repository
+        # cannot supply its own instructions to the model.
         prompt = render_prompt(context)
         body = _synthesise_chain(prompt, spec, config, fallback, opener=opener, client=client)
     except _AlreadyResolved:

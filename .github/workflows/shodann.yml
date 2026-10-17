@@ -250,14 +250,22 @@ jobs:
         env:
           # Citizen-controlled text never enters this step as an expression.
           # Python reads the event payload from disk and parses it as JSON.
+          SHODANN_LLM_WIRE: ${{ vars.SHODANN_LLM_WIRE }}
           SHODANN_LLM_BASE_URL: ${{ vars.SHODANN_LLM_BASE_URL }}
           SHODANN_LLM_MODEL: ${{ vars.SHODANN_LLM_MODEL }}
           SHODANN_LLM_API_KEY: ${{ secrets.SHODANN_LLM_API_KEY }}
+          SHODANN_LLM_EFFORT: ${{ vars.SHODANN_LLM_EFFORT }}
+          SHODANN_LLM_MAX_TOKENS: ${{ vars.SHODANN_LLM_MAX_TOKENS }}
+          SHODANN_LLM_TEMPERATURE: ${{ vars.SHODANN_LLM_TEMPERATURE }}
+          SHODANN_LLM_TIMEOUT: ${{ vars.SHODANN_LLM_TIMEOUT }}
           # The fallback, used only when the configured model cannot be
           # reached. Absent key, no fallback - and the citizen still gets the
           # facts-only comment, exactly as before.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SHODANN_FALLBACK_MODEL: ${{ vars.SHODANN_FALLBACK_MODEL }}
+          SHODANN_FALLBACK_TEMPERATURE: ${{ vars.SHODANN_FALLBACK_TEMPERATURE }}
+          SHODANN_FALLBACK_EFFORT: ${{ vars.SHODANN_FALLBACK_EFFORT }}
+          SHODANN_FALLBACK_MAX_TOKENS: ${{ vars.SHODANN_FALLBACK_MAX_TOKENS }}
         run: |
           # --dry-run: a review never writes state. Persistence happens on
           # merge, in the step below.
@@ -372,9 +380,10 @@ jobs:
           #
           # PRD:446 describes a scheduled job in the *course* repository reading
           # across student repositories. That is a different artifact and it is
-          # blocked: `render_prompt` resolves `prompts/` against the process
-          # working directory, so SHODANN cannot yet stand in one repository and
-          # read another (issue #51). This is the same board for one repository,
+          # still not built: nothing aggregates ledgers across repositories.
+          # (The old blocker, that `render_prompt` read `prompts/` from the
+          # working directory, is gone: #66 anchored it and the templates now
+          # ship in the wheel.) This is the same board for one repository,
           # which is what the shipped topology supports today.
           python -m shodann.cli --action leaderboard --root . --out METRICS.md
 
