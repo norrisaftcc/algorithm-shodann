@@ -55,7 +55,7 @@ The open "Python vs JavaScript" issue is resolved in favor of **Python**. Ration
 - **The freeze is the point.** Ruff's `C901` and radon's numbers differ. Anything feeding the velocity score must not change mid-cohort or every baseline resets. Adding a new signal is fine; changing or removing one is not.
 - **`run-gemini-cli` is maintained but the wrong shape** — it drives an agentic CLI that decides what to do, while SHODANN has a fixed prompt and a fixed output format. Call the Gemini API directly from Python (`google-genai`); cheaper, testable offline, no agent loop. `gemini-2.5-flash-lite` / `gemini-3.5-flash-lite` is the tier for a <400-word review.
 - **Do not build on GitHub Models** — fully retired 2026-07-30.
-- **Two model wire formats, and only one is a config change.** `src/shodann/llm.py` speaks OpenAI-compatible `/chat/completions` (Gemini, Ollama, vLLM) and, as a fallback when the configured model cannot be reached, Anthropic's Messages API through the official `anthropic` SDK — a different body, response shape and auth header, so it is a port, not a base-URL edit. `ANTHROPIC_API_KEY` alone enables it; `claude-haiku-4-5` is the default tier. The wire is set explicitly, never sniffed from the URL.
+- **Two model wire formats, and only one is a config change.** `src/shodann/llm.py` speaks OpenAI-compatible `/chat/completions` (Gemini, Ollama, vLLM) and, as a fallback when the configured model cannot be reached, Anthropic's Messages API through the official `anthropic` SDK — a different body, response shape and auth header, so it is a port, not a base-URL edit. `ANTHROPIC_API_KEY` alone enables it; `claude-haiku-4-5` is the default tier. The wire is set explicitly, never sniffed from the URL: `SHODANN_LLM_WIRE=anthropic` makes Anthropic the *primary* (model, key, `SHODANN_LLM_EFFORT`; no temperature is sent unless one is set).
 - **Use Jinja2** rather than the hand-rolled `{{ IF }}`/`{{ FOR EACH }}` shell substitution. The existing `{{ PLACEHOLDER }}` syntax is already Jinja-compatible, and `{% include %}` is exactly the layered-fragment assembly `prompts/` wants.
 - **CI runtime:** `uv` + `astral-sh/setup-uv` (`uvx ruff check`, `uvx pip-audit` — no install step). Note `actions/setup-python` v7 removed the `pip-install` input; artifact/cache actions v1–v3 are long dead.
 - Worth reading before rebuilding comment plumbing: `qodo-ai/pr-agent`. Avoid `villesau/ai-codereviewer` (dead since 2023).
@@ -230,7 +230,7 @@ Four more, learned from running it:
 | **The live backlog — 47 items, and which are closed** | `design_docs/sprints/2026-07-28/01-candidates.md` |
 | How this repo negotiates, and the floor test | `design_docs/addenda/the-algorithm.md` |
 | Why correct changes still compound into a problem | `design_docs/addenda/accumulation.md` |
-| What a second repository would need to subscribe (it cannot today) | `design_docs/ONBOARDING_A_REPOSITORY.md` |
+| How a second repository subscribes (reusable workflow `shodann-review.yml`, caller `templates/subscriber/shodann.yml`; copying `shodann.yml` is unsupported) | `design_docs/ONBOARDING_A_REPOSITORY.md` |
 | Which documents are below floor, and where their operative sentences sit | `design_docs/sprints/2026-07-28/05-assay.md` |
 | Velocity math as shipped, guards, US-1.3 | `src/shodann/velocity.py` |
 | Citizen ledger, clearance names, atomic writes | `src/shodann/state.py` |
