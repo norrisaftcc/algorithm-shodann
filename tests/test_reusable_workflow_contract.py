@@ -210,6 +210,20 @@ def test_only_the_pinned_engine_is_ever_installed(reusable: str) -> None:
         assert not re.search(r"pip install\b[^\n]*\s(\.|-e|\S*citizen\S*)(\s|$)", line), line
 
 
+def test_the_review_job_declares_its_own_permissions(reusable: str) -> None:
+    """The job holding the key states what it needs; it does not inherit the caller's ceiling.
+
+    `shodann.yml` declares the same two scopes at the top of the file, which is
+    the right place there because it has no called-workflow ceiling to outgrow.
+    """
+    review = _executable(_job(reusable, "review"))
+
+    assert "permissions:" in review, "an undeclared token is whatever the caller granted"
+    assert "contents: write" in review
+    assert "pull-requests: write" in review
+    assert "id-token" not in review, "an OIDC token is a credential this job must not hold"
+
+
 def test_the_engine_checkout_is_pinned_and_holds_no_credentials(reusable: str) -> None:
     step = _executable(_step(reusable, "Check out the pinned engine"))
 
@@ -237,6 +251,23 @@ def test_the_engine_ref_must_be_a_commit_and_the_workflow_enforces_it(reusable: 
     assert "${{" not in refusal.split("run:", 1)[1]
     review = _job(reusable, "review")
     assert review.index("Refuse an engine") < review.index("Check out the pinned engine")
+
+
+def test_the_engine_commit_must_be_on_main_and_the_check_reads_it_from_env(
+    reusable: str,
+) -> None:
+    """A well-formed SHA is not a reviewed one: an unmerged branch's commit passes the format."""
+    checkout = _executable(_step(reusable, "Check out the pinned engine"))
+    step = _executable(_step(reusable, "Refuse an engine commit that is not on main"))
+    review = _job(reusable, "review")
+
+    assert "fetch-depth: 0" in checkout, "ancestry cannot be answered from a shallow clone"
+    assert 'git -C engine merge-base --is-ancestor "$ENGINE_REF" origin/main' in step
+    assert "git -C engine fetch" in step, "origin/main must be fetched if the checkout lacks it"
+    assert "ENGINE_REF: ${{ inputs.engine-ref }}" in step
+    assert "${{" not in step.split("run:", 1)[1], "env, never in the script body"
+    assert review.index("Check out the pinned engine") < review.index("Refuse an engine commit")
+    assert review.index("Refuse an engine commit") < review.index("Install SHODANN")
 
 
 def test_every_python_entry_point_ignores_the_working_directory(reusable: str) -> None:

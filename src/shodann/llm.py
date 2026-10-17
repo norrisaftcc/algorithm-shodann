@@ -57,7 +57,17 @@ __all__ = [
 
 DEFAULT_TIMEOUT = 45
 DEFAULT_MAX_TOKENS = 900
+DEFAULT_ANTHROPIC_MAX_TOKENS = 2000
+"""The Anthropic wire's default ceiling, matching the subscriber template.
+
+Higher than the OpenAI wire's 900 because ``max_tokens`` bounds thinking *and*
+the answer on current Haiku models. A sub-400-word review fits in 900 only when
+the model does not think first, and the failure is a truncated or empty answer
+rather than an error - see the ``max_tokens`` check in ``_generate_anthropic``.
+"""
 DEFAULT_OPENAI_TEMPERATURE = 0.4
+DEFAULT_FALLBACK_TEMPERATURE = 0.4
+"""What the fallback sent before the Haiku 5 models existed; kept for models that accept it."""
 
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 """The values ``output_config.effort`` accepts. Anything else is a typo."""
@@ -74,6 +84,27 @@ deterministic tooling upstream, so the model is reframing facts rather than
 finding them. Paying for a frontier model to do that would be spending on the
 one step that cannot invent a metric anyway.
 """
+
+
+_SAMPLING_REJECTING_PREFIXES = ("claude-haiku-5",)
+"""Models documented as answering any non-default ``temperature`` with a 400.
+
+A prefix, so ``claude-haiku-5-5`` and its dated snapshots are covered without
+this list needing an edit per release. Deliberately narrow: a model not named
+here keeps the previous behaviour, and a wrongly omitted temperature is
+invisible while a wrongly sent one is a degraded comment.
+"""
+
+_EFFORT_REJECTING_PREFIXES = ("claude-haiku-4",)
+"""Models documented as rejecting ``output_config.effort``. Haiku 4.5 does."""
+
+
+def _rejects_sampling(model: str) -> bool:
+    return model.strip().lower().startswith(_SAMPLING_REJECTING_PREFIXES)
+
+
+def _rejects_effort(model: str) -> bool:
+    return model.strip().lower().startswith(_EFFORT_REJECTING_PREFIXES)
 
 
 class LLMUnavailable(RuntimeError):
@@ -122,6 +153,12 @@ class LLMConfig:
         Every variable is read as "blank means unset": an unset GitHub Actions
         variable arrives as the empty string, not as an absent key.
 
+        An unusable timeout or ``max_tokens`` (``45s``, ``0``, ``-5``) falls
+        back to the default rather than raising, exactly as the fallback path
+        does: both read the same variables and must not disagree about them.
+        ``max_tokens`` defaults higher on the Anthropic wire; see
+        ``DEFAULT_ANTHROPIC_MAX_TOKENS``.
+
         Raises ``ValueError`` naming the variable for a wire, effort or
         temperature that is not one of the allowed values. Silence would be
         worse: a typo in ``SHODANN_LLM_WIRE`` would pick the OpenAI wire and
@@ -137,8 +174,11 @@ class LLMConfig:
             model=_text(env.get("SHODANN_LLM_MODEL")),
             api_key=env.get("SHODANN_LLM_API_KEY") or "",
             wire=wire,
-            timeout=int(env.get("SHODANN_LLM_TIMEOUT") or DEFAULT_TIMEOUT),
-            max_tokens=_positive_int(env.get("SHODANN_LLM_MAX_TOKENS"), DEFAULT_MAX_TOKENS),
+            timeout=_positive_int(env.get("SHODANN_LLM_TIMEOUT"), DEFAULT_TIMEOUT),
+            max_tokens=_positive_int(
+                env.get("SHODANN_LLM_MAX_TOKENS"),
+                DEFAULT_ANTHROPIC_MAX_TOKENS if wire == WIRE_ANTHROPIC else DEFAULT_MAX_TOKENS,
+            ),
             temperature=temperature,
             effort=_effort(env.get("SHODANN_LLM_EFFORT"), "SHODANN_LLM_EFFORT"),
         )
@@ -171,11 +211,23 @@ def fallback_from_env(environ: dict | None = None) -> LLMConfig | None:
     ``None`` rather than an unconfigured config, so a caller can tell "no
     fallback was set up" from "a fallback was set up and could not be reached".
 
-    Sampling is left to the model's default unless ``SHODANN_FALLBACK_TEMPERATURE``
-    is set. This used to send 0.4 always, which made
-    ``SHODANN_FALLBACK_MODEL=claude-haiku-5-5`` fail on every call: the model
-    rejects a non-default temperature, and the failure surfaced only as a
-    degraded comment.
+    **Temperature rule.** ``SHODANN_FALLBACK_TEMPERATURE`` wins when set. When
+    it is not, the fallback sends 0.4, as it always did, *except* for a model
+    documented as rejecting sampling parameters (the ``claude-haiku-5*``
+    family, ``_SAMPLING_REJECTING_PREFIXES``), which gets nothing. Sending 0.4
+    to Haiku 5.5 made every fallback call a 400 that surfaced only as a
+    degraded comment; omitting it everywhere changed the default fallback
+    ``claude-haiku-4-5`` from 0.4 to the API's own default for no reason a
+    citizen's review could see. Narrow on purpose: a model this does not name
+    keeps the earlier behaviour.
+
+    **Effort.** ``SHODANN_FALLBACK_EFFORT`` is ignored when the model is known
+    to reject ``output_config`` (Haiku 4.5, ``_EFFORT_REJECTING_PREFIXES``), so
+    setting it for the Haiku 5.5 primary's benefit cannot take the Haiku 4.5
+    fallback down. See ``_generate_anthropic``.
+
+    ``max_tokens`` defaults to ``DEFAULT_ANTHROPIC_MAX_TOKENS``: this is always
+    the Anthropic wire.
     """
     env = environ if environ is not None else os.environ
     key = env.get("ANTHROPIC_API_KEY", "")
@@ -186,15 +238,21 @@ def fallback_from_env(environ: dict | None = None) -> LLMConfig | None:
     # the two-argument form hands back "" and the model name disappears -
     # which `configured` then reports as "no fallback set up" on a deployment
     # that provided a key. Same reason the timeout parses defensively.
+    model = (env.get("SHODANN_FALLBACK_MODEL") or "").strip() or DEFAULT_FALLBACK_MODEL
+    temperature = _optional_float(
+        env.get("SHODANN_FALLBACK_TEMPERATURE"), "SHODANN_FALLBACK_TEMPERATURE"
+    )
+    if temperature is None and not _rejects_sampling(model):
+        temperature = DEFAULT_FALLBACK_TEMPERATURE
     return LLMConfig(
-        model=(env.get("SHODANN_FALLBACK_MODEL") or "").strip() or DEFAULT_FALLBACK_MODEL,
+        model=model,
         api_key=key,
         wire=WIRE_ANTHROPIC,
         timeout=_positive_int(env.get("SHODANN_LLM_TIMEOUT"), DEFAULT_TIMEOUT),
-        max_tokens=_positive_int(env.get("SHODANN_FALLBACK_MAX_TOKENS"), DEFAULT_MAX_TOKENS),
-        temperature=_optional_float(
-            env.get("SHODANN_FALLBACK_TEMPERATURE"), "SHODANN_FALLBACK_TEMPERATURE"
+        max_tokens=_positive_int(
+            env.get("SHODANN_FALLBACK_MAX_TOKENS"), DEFAULT_ANTHROPIC_MAX_TOKENS
         ),
+        temperature=temperature,
         effort=_effort(env.get("SHODANN_FALLBACK_EFFORT"), "SHODANN_FALLBACK_EFFORT"),
     )
 
@@ -270,7 +328,13 @@ def _generate_anthropic(prompt: str, config: LLMConfig, *, client=None) -> str:
 
     `temperature` and `output_config` are sent only when set. Haiku 5.5 returns
     a 400 for any temperature other than the default, so an unconditional
-    value turns every call into a degraded comment.
+    value turns every call into a degraded comment. `output_config.effort` is
+    dropped for a model known to reject it (Haiku 4.5), so one operator-wide
+    effort setting cannot break the model that cannot take it.
+
+    A `max_tokens` stop is `LLMUnavailable`, not a short review: thinking
+    counts against the ceiling, so the answer can be cut off mid-sentence or
+    absent, and the fallback should be tried with the cause in the log.
     """
     try:
         import anthropic
@@ -285,7 +349,7 @@ def _generate_anthropic(prompt: str, config: LLMConfig, *, client=None) -> str:
     }
     if config.temperature is not None:
         request["temperature"] = config.temperature
-    if config.effort:
+    if config.effort and not _rejects_effort(config.model):
         request["output_config"] = {"effort": config.effort}
     try:
         message = talker.messages.create(**request)
@@ -299,6 +363,11 @@ def _generate_anthropic(prompt: str, config: LLMConfig, *, client=None) -> str:
     # before the content, or the first index raises on an empty list.
     if getattr(message, "stop_reason", None) == "refusal":
         raise LLMUnavailable(f"{config.describe()} declined the request")
+    if getattr(message, "stop_reason", None) == "max_tokens":
+        raise LLMUnavailable(
+            f"{config.describe()} hit max_tokens ({config.max_tokens}) before finishing; "
+            "raise SHODANN_LLM_MAX_TOKENS or lower the effort"
+        )
 
     text = "".join(
         block.text for block in message.content if getattr(block, "type", None) == "text"

@@ -61,11 +61,18 @@ caller, `templates/subscriber/shodann.yml`, which does two things:
   install as the engine, with `pip install ./engine`. The prompt templates ship
   inside that package, so nothing is read from the student's checkout.
 
-**The two SHAs must be the same 40-character commit.** The workflow refuses
-anything else, a branch or a tag included, because those move under every
-subscriber at once. The template ships with all zeros, which is deliberately
-invalid: an unedited copy fails at checkout instead of reviewing with something
-nobody chose.
+**The two SHAs must be the same 40-character commit, and keeping them equal is
+your job, not the workflow's.** A called workflow cannot see the ref it was
+called at: `github.workflow_ref` and `github.workflow_sha` name the caller's own
+file, and the called workflow's SHA exists only as a claim in an OIDC token that
+the `review` job must not be given. What the workflow does enforce on
+`engine-ref` is two things. It refuses anything that is not a full 40-character
+commit, a branch or a tag included, because those move under every subscriber at
+once. And it refuses a commit that is not an ancestor of `main` in
+`norrisaftcc/algorithm-shodann`, so a SHA from a fork or an unmerged branch
+cannot be installed beside the write token and the model key. The template ships
+with all zeros, which is deliberately invalid: an unedited copy fails at
+checkout instead of reviewing with something nobody chose.
 
 The `analyse` job runs the student's tests with no secrets. The `review` job
 holds the write token and the model key, installs only the pinned engine, and

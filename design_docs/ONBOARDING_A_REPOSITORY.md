@@ -28,7 +28,7 @@ superseded, in "History" at the end of this file.
 | Templates are resolved from the process working directory, so a citizen who commits `prompts/` supplies SHODANN's instructions | **Fixed.** `PROMPTS_DIR` is anchored on `__file__` (#66), and `default_prompts_dir()` never consults the working directory. | `src/shodann/prompts.py`; `tests/test_prompt_packaging.py` |
 | The templates are not package data; a wheel holds 0 of the 7 `.md` files | **Fixed.** `prompts/` is mapped into the wheel as `shodann._prompts`. A source checkout wins; the installed package is the fallback; neither present raises `FileNotFoundError`. | `pyproject.toml`, `src/shodann/prompts.py` |
 | The `review` job installs whatever repository was checked out | **Fixed for subscribers.** The reusable workflow checks the citizen out into `citizen/`, checks the pinned engine out into `engine/`, and runs `pip install ./engine` (non-editable). Nothing installs `citizen/`. | `.github/workflows/shodann-review.yml`; `tests/test_reusable_workflow_contract.py` |
-| The reviewer's own version is not pinned | **Fixed.** `engine-ref` must be a full 40-character commit SHA; the workflow refuses a branch or a tag. | same |
+| The reviewer's own version is not pinned | **Fixed.** `engine-ref` must be a full 40-character commit SHA, and that commit must be an ancestor of `main` in `norrisaftcc/algorithm-shodann`; the workflow refuses a branch, a tag, and a SHA that was never merged. **It does not check that `engine-ref` equals the `@` ref in `uses:`:** a called workflow cannot read the ref it was called at, so that equality is the caller's responsibility. | same |
 
 `.github/workflows/shodann.yml` (self-review) is unchanged except for the
 environment mappings its compose step gained. Converting it into a caller of
@@ -99,10 +99,10 @@ These are constraints, not defects. Read them before you subscribe a course.
    |---|---|---|
    | `SHODANN_LLM_API_KEY` | secret | The primary model key. On the Anthropic wire it is the Anthropic key. Without it `LLMConfig.configured` is false and every review takes the REDUCED ALLOCATION path. |
    | `ANTHROPIC_API_KEY` | secret, optional | Enables the fallback wire when the primary is unreachable (`fallback_from_env`). Keyed on presence alone; do not set it unless the fallback is wanted. |
-   | `engine-ref` | input, required | 40-character commit SHA of the engine. Must equal the SHA after `@` in `uses:`. |
+   | `engine-ref` | input, required | 40-character commit SHA of the engine, and an ancestor of `main`. The caller must keep it equal to the SHA after `@` in `uses:`; the workflow cannot check that. |
    | `llm-wire` | input | `openai` or `anthropic`. Blank means `openai`. Any other value raises `ValueError` naming `SHODANN_LLM_WIRE`. |
    | `llm-model`, `llm-effort`, `llm-max-tokens`, `llm-temperature`, `llm-timeout`, `llm-base-url` | inputs | Primary model. On the Anthropic wire there is no base URL, and temperature is omitted unless set. `llm-effort` is `low`, `medium`, `high`, `xhigh` or `max`; blank sends nothing. |
-   | `fallback-model`, `fallback-temperature`, `fallback-effort`, `fallback-max-tokens` | inputs | Fallback model. The default fallback model is `DEFAULT_FALLBACK_MODEL`, `claude-haiku-4-5`. |
+   | `fallback-model`, `fallback-temperature`, `fallback-effort`, `fallback-max-tokens` | inputs | Fallback model. The default fallback model is `DEFAULT_FALLBACK_MODEL`, `claude-haiku-4-5`. Temperature defaults to 0.4, except for the `claude-haiku-5*` family, which rejects it and gets none. Do not set `fallback-effort` while the fallback is Haiku 4.5: it rejects `output_config` (the program drops it for that model, but a blank input is the safe setting). `max_tokens` defaults to 2000 on the Anthropic wire. |
    | `leaderboard` | input, boolean | Default `false`. See "What is still true". |
    | `record-ledger` | input, boolean | Default `true`. Set `false` if the default branch does not allow the Actions token to push. |
    | `python-version` | input | Default `3.12`. |
@@ -185,6 +185,8 @@ the engine is pinned at all.
 |---|---|
 | Every PR gets the fixed "REDUCED ALLOCATION / Resource Advisory" comment, no velocity ever | The repository copied `shodann.yml` instead of calling the reusable workflow, or the compose step could not start. Open the `review` job log: a failed `pip install` means an unusable `engine-ref`; `::error::engine-ref must be a full 40-character commit SHA` means the placeholder or a branch name is still in the caller. |
 | The run fails at checkout of the engine | `engine-ref` is still the all-zero placeholder, or names a commit that is not in `algorithm-shodann`. |
+| `::error::engine-ref ... is not an ancestor of main` | The SHA is real but was never merged to `main` (an open pull request's commit, or a fork's). Pin a merged commit, and set the `@` ref in `uses:` to the same one. |
+| The reviewed code and the engine disagree after an update | The `uses:` ref and `engine-ref` were edited separately. The workflow cannot see the first, so only a person comparing the two can catch it. |
 | Every PR gets a four-line "MINIMAL RESPONSE" comment with `Clearance: PENDING`, no metrics | `render_prompt` raised. In a reusable-workflow run that means the installed engine cannot find its prompt templates, so the package was built without `shodann._prompts`. Check the pinned commit's `pyproject.toml`. |
 | The comment posts, but the model never answers (facts only) | `SHODANN_LLM_API_KEY` is not passed through `secrets:` in the caller, or `llm-wire`, `llm-model` are blank. On the Anthropic wire a key and a model are both required. |
 | A review degrades after the model is changed | A model that rejects a non-default sampling parameter will fail every call. Leave `llm-temperature` blank on the Anthropic wire. If the fallback model rejects a value, check `fallback-temperature`. |

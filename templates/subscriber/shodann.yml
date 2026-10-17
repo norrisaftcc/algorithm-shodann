@@ -15,7 +15,10 @@
 #      deliberately invalid, so an unedited copy fails at checkout instead of
 #      reviewing with something nobody chose. The two values must be identical:
 #      the first pins the workflow, the second pins the engine it installs.
-#      A branch or tag is refused, because both move under every subscriber.
+#      A branch or tag is refused, because both move under every subscriber,
+#      and so is a commit that is not an ancestor of main in
+#      norrisaftcc/algorithm-shodann. Equality of the two values is YOURS to
+#      keep: a called workflow cannot read the ref it was called at.
 #   2. Add the secrets below to the repository (Settings, Secrets and
 #      variables, Actions). Use a dedicated Anthropic workspace key with a low
 #      spend limit. Anyone with write access to this repository can read a
@@ -59,6 +62,12 @@ jobs:
       llm-model: claude-haiku-5-5
       llm-effort: low
       llm-max-tokens: '2000'
+      # The `fallback-*` inputs apply only when ANTHROPIC_API_KEY is set and
+      # the primary cannot be reached. Do NOT set `fallback-effort` while the
+      # fallback model is Haiku 4.5 (the default): it rejects output_config.
+      # The program drops effort for that model, but leave this blank anyway.
+      # `fallback-temperature` is unnecessary: Haiku 4.5 gets 0.4, Haiku 5.x none.
+      # fallback-model: claude-haiku-4-5
       leaderboard: false
       record-ledger: true
     secrets:

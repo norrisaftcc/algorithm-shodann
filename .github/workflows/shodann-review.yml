@@ -76,6 +76,10 @@ on:
       llm-timeout:
         type: string
         default: ''
+      # The `fallback-*` inputs apply only when ANTHROPIC_API_KEY is passed and
+      # the primary could not answer. Blank means the program's default: model
+      # claude-haiku-4-5, temperature 0.4 (none for the claude-haiku-5* family),
+      # max tokens 2000.
       fallback-model:
         type: string
         default: ''
@@ -83,6 +87,9 @@ on:
         type: string
         default: ''
       fallback-effort:
+        description: >-
+          Leave blank while the fallback model is Haiku 4.5, which rejects
+          output_config.effort. Set it only for a fallback that takes it.
         type: string
         default: ''
       fallback-max-tokens:
@@ -185,6 +192,13 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Declared on the job, not inherited. A called workflow's token is capped
+    # by the caller, but the caller's `permissions` is the ceiling and not a
+    # statement of need: a caller that grants more must not hand it to the job
+    # that holds the model key. `analyse` declares `contents: read` the same way.
+    permissions:
+      contents: write        # the ledger commit, on merge only
+      pull-requests: write   # the review comment
 
     steps:
       - name: Refuse an engine that is not pinned to a commit
@@ -218,6 +232,41 @@ jobs:
           ref: ${{ inputs.engine-ref }}
           path: engine
           persist-credentials: false
+          # Full history, so the next step can ask whether this commit is an
+          # ancestor of main. A shallow checkout cannot answer that.
+          fetch-depth: 0
+
+      - name: Refuse an engine commit that is not on main
+        # A 40-character SHA proves the ref cannot move. It does not prove the
+        # commit was ever reviewed: a SHA from a fork, or from an unmerged
+        # branch of this repository, passes the format check and would install
+        # code that never went through a pull request. Ancestry of origin/main
+        # is the property that a merged, reviewed commit has.
+        #
+        # Equality between `engine-ref` and the caller's `uses:` ref is NOT
+        # checked, because it cannot be from here: `github.workflow_ref` and
+        # `github.workflow_sha` name the CALLER's file, and the called
+        # workflow's own SHA (`job_workflow_sha`) exists only as a claim in an
+        # OIDC token, which needs `id-token: write` that this job must not
+        # hold. Keeping the two equal is the caller's responsibility.
+        #
+        # The value reaches the shell through env, never through an expression.
+        env:
+          ENGINE_REF: ${{ inputs.engine-ref }}
+        run: |
+          # `fetch-depth: 0` fetches every branch, so origin/main normally
+          # exists. The fetch is a fallback for a checkout that did not.
+          if ! git -C engine rev-parse --verify --quiet origin/main >/dev/null; then
+            git -C engine fetch --quiet origin main || true
+          fi
+          if ! git -C engine rev-parse --verify --quiet origin/main >/dev/null; then
+            echo "::error::Could not find origin/main in the engine checkout, so the engine commit cannot be verified."
+            exit 1
+          fi
+          if ! git -C engine merge-base --is-ancestor "$ENGINE_REF" origin/main; then
+            echo "::error::engine-ref $ENGINE_REF is not an ancestor of main in norrisaftcc/algorithm-shodann. Pin a commit that has been merged."
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v6

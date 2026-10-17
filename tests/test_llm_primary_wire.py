@@ -184,8 +184,37 @@ def test_an_unset_actions_variable_behaves_as_unset(name: str, blank: str) -> No
 
 
 @pytest.mark.parametrize("raw", ["", "nope", "0", "-5"])
-def test_a_nonsense_max_tokens_falls_back_to_the_default(raw: str) -> None:
-    assert LLMConfig.from_env({**PRIMARY_ENV, "SHODANN_LLM_MAX_TOKENS": raw}).max_tokens == 900
+def test_a_nonsense_max_tokens_falls_back_to_the_wires_default(raw: str) -> None:
+    anthropic = LLMConfig.from_env({**PRIMARY_ENV, "SHODANN_LLM_MAX_TOKENS": raw})
+    assert anthropic.max_tokens == 2000
+    openai = LLMConfig.from_env(
+        {"SHODANN_LLM_BASE_URL": "http://x", "SHODANN_LLM_MODEL": "m",
+         "SHODANN_LLM_MAX_TOKENS": raw}
+    )
+    assert openai.max_tokens == 900
+
+
+def test_the_anthropic_wire_defaults_to_the_template_ceiling_and_openai_does_not() -> None:
+    """900 leaves no room beside thinking; the template already asks for 2000."""
+    assert LLMConfig.from_env(PRIMARY_ENV).max_tokens == 2000
+    openai_env = {"SHODANN_LLM_BASE_URL": "http://x", "SHODANN_LLM_MODEL": "m"}
+    assert LLMConfig.from_env(openai_env).max_tokens == 900
+    assert fallback_from_env({"ANTHROPIC_API_KEY": "k"}).max_tokens == 2000
+
+
+@pytest.mark.parametrize("raw", ["45s", "-1", "0", "abc", "1.5"])
+def test_a_nonsense_primary_timeout_falls_back_to_the_default_instead_of_raising(raw: str) -> None:
+    """`int("45s")` raised a bare ValueError and a negative value was accepted.
+
+    The fallback path already used `_positive_int`; the two read one variable.
+    """
+    env = {**PRIMARY_ENV, "SHODANN_LLM_TIMEOUT": raw}
+    assert LLMConfig.from_env(env).timeout == 45
+    assert fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_LLM_TIMEOUT": raw}).timeout == 45
+
+
+def test_a_real_primary_timeout_is_honoured() -> None:
+    assert LLMConfig.from_env({**PRIMARY_ENV, "SHODANN_LLM_TIMEOUT": "12"}).timeout == 12
 
 
 def test_max_tokens_is_read_from_the_environment() -> None:
@@ -260,7 +289,7 @@ def test_effort_does_not_reach_the_openai_wire() -> None:
 # --- the fallback no longer pins a temperature -------------------------------
 
 
-def test_the_fallback_sends_no_temperature_by_default() -> None:
+def test_a_haiku_5_fallback_sends_no_temperature_by_default() -> None:
     """What makes `SHODANN_FALLBACK_MODEL=claude-haiku-5-5` work at all."""
     config = fallback_from_env(
         {"ANTHROPIC_API_KEY": "sk-test", "SHODANN_FALLBACK_MODEL": HAIKU_5_5}
@@ -271,7 +300,49 @@ def test_the_fallback_sends_no_temperature_by_default() -> None:
     assert client.seen[0]["model"] == HAIKU_5_5
     assert "temperature" not in client.seen[0]
     assert "output_config" not in client.seen[0]
-    assert client.seen[0]["max_tokens"] == 900
+    assert client.seen[0]["max_tokens"] == 2000
+
+
+@pytest.mark.parametrize("model", [HAIKU_5_5, "claude-haiku-5-5-20260301", "Claude-Haiku-5-6"])
+def test_the_whole_haiku_5_family_is_spared_a_temperature(model: str) -> None:
+    config = fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_MODEL": model})
+    assert config.temperature is None
+
+
+@pytest.mark.parametrize("model", ["", "claude-haiku-4-5", "claude-sonnet-5"])
+def test_every_other_fallback_keeps_the_previous_0_4(model: str) -> None:
+    """Dropping temperature everywhere changed the default fallback with no benefit."""
+    config = fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_MODEL": model})
+    client = FakeClient()
+    generate("p", config, client=client)
+    assert client.seen[0]["temperature"] == 0.4
+
+
+def test_an_explicit_fallback_temperature_beats_the_model_rule() -> None:
+    config = fallback_from_env(
+        {"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_MODEL": HAIKU_5_5,
+         "SHODANN_FALLBACK_TEMPERATURE": "1"}
+    )
+    assert config.temperature == 1.0
+
+
+def test_effort_is_not_sent_to_haiku_4_5_even_when_asked_for() -> None:
+    """`SHODANN_FALLBACK_EFFORT` set for Haiku 5.5 must not 400 the 4.5 default."""
+    config = fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_EFFORT": "low"})
+    client = FakeClient()
+    generate("p", config, client=client)
+    assert config.model == "claude-haiku-4-5"
+    assert "output_config" not in client.seen[0]
+
+
+def test_effort_is_sent_to_a_model_that_takes_it() -> None:
+    config = fallback_from_env(
+        {"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_MODEL": HAIKU_5_5,
+         "SHODANN_FALLBACK_EFFORT": "low"}
+    )
+    client = FakeClient()
+    generate("p", config, client=client)
+    assert client.seen[0]["output_config"] == {"effort": "low"}
 
 
 def test_the_default_fallback_model_is_unchanged() -> None:
@@ -279,17 +350,18 @@ def test_the_default_fallback_model_is_unchanged() -> None:
     assert DEFAULT_FALLBACK_MODEL == "claude-haiku-4-5"
 
 
-def test_the_fallback_temperature_is_sent_only_when_asked_for() -> None:
-    config = fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_TEMPERATURE": "0.4"})
+def test_the_fallback_temperature_is_read_from_the_environment() -> None:
+    config = fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_TEMPERATURE": "0.7"})
     client = FakeClient()
     generate("p", config, client=client)
-    assert client.seen[0]["temperature"] == 0.4
+    assert client.seen[0]["temperature"] == 0.7
 
 
 def test_the_fallback_effort_and_max_tokens_are_read() -> None:
     config = fallback_from_env(
         {
             "ANTHROPIC_API_KEY": "k",
+            "SHODANN_FALLBACK_MODEL": HAIKU_5_5,
             "SHODANN_FALLBACK_EFFORT": "medium",
             "SHODANN_FALLBACK_MAX_TOKENS": "1500",
         }
@@ -310,9 +382,9 @@ def test_blank_fallback_variables_behave_as_unset(blank: str) -> None:
             "SHODANN_FALLBACK_MAX_TOKENS": blank,
         }
     )
-    assert config.temperature is None
+    assert config.temperature == 0.4, "blank is unset, and unset on Haiku 4.5 is the old 0.4"
     assert config.effort is None
-    assert config.max_tokens == 900
+    assert config.max_tokens == 2000
 
 
 def test_a_bogus_fallback_effort_or_temperature_names_the_variable() -> None:
@@ -320,6 +392,23 @@ def test_a_bogus_fallback_effort_or_temperature_names_the_variable() -> None:
         fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_EFFORT": "ultra"})
     with pytest.raises(ValueError, match="SHODANN_FALLBACK_TEMPERATURE"):
         fallback_from_env({"ANTHROPIC_API_KEY": "k", "SHODANN_FALLBACK_TEMPERATURE": "hot"})
+
+
+# --- a max_tokens stop is a failure with a cause, not a short review ---------
+
+
+class TruncatingClient(FakeClient):
+    def create(self, **kwargs):
+        self.seen.append(kwargs)
+        return Message(content=[Block("The Algorithm obs")], stop_reason="max_tokens")
+
+
+def test_a_max_tokens_stop_is_unavailable_and_names_the_cause() -> None:
+    from shodann.llm import LLMUnavailable
+
+    config = LLMConfig.from_env(PRIMARY_ENV)
+    with pytest.raises(LLMUnavailable, match="max_tokens"):
+        generate("p", config, client=TruncatingClient())
 
 
 # --- end to end: a primary on the anthropic wire produces a real review ------
@@ -411,3 +500,28 @@ def test_the_anthropic_dependency_floor_admits_only_sdks_that_know_effort() -> N
     assert floor >= MINIMUM_SDK_WITH_EFFORT, (
         f"anthropic>={floor[0]}.{floor[1]} admits a client with no output_config.effort"
     )
+
+
+class ModelSensitiveClient(FakeClient):
+    """The primary is cut off at `max_tokens`; any other model answers."""
+
+    def create(self, **kwargs):
+        self.seen.append(kwargs)
+        if kwargs["model"] == HAIKU_5_5:
+            return Message(content=[Block("The Algorithm obs")], stop_reason="max_tokens")
+        return Message(content=[Block(GOOD_RESPONSE)])
+
+
+def test_a_truncated_primary_reaches_the_fallback_and_the_review_is_not_degraded(tmp_path) -> None:
+    """Without the check a half-sentence is a short review that fails validation,
+    is retried at the same ceiling, and degrades without ever asking the fallback."""
+    config = LLMConfig.from_env(PRIMARY_ENV)
+    fallback = fallback_from_env({"ANTHROPIC_API_KEY": "k"})
+    client = ModelSensitiveClient()
+
+    body = review(
+        EVENT, root=tmp_path, config=config, fallback=fallback, client=client, write_state=False
+    )
+
+    assert body == GOOD_RESPONSE.strip()
+    assert [c["model"] for c in client.seen] == [HAIKU_5_5, "claude-haiku-4-5"]
