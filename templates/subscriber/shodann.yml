@@ -1,0 +1,66 @@
+# =============================================================================
+# SHODANN, subscriber copy
+# =============================================================================
+#
+# Copy this file to `.github/workflows/shodann.yml` in the repository to be
+# reviewed. It is a caller: the review logic lives in
+# `norrisaftcc/algorithm-shodann/.github/workflows/shodann-review.yml`, and
+# this file pins that workflow and the engine it installs to one commit.
+#
+# BEFORE YOU COPY IT
+#
+#   1. Replace BOTH occurrences of the SHA below with one full 40-character
+#      commit of norrisaftcc/algorithm-shodann that contains
+#      `.github/workflows/shodann-review.yml`. The placeholder (all zeros) is
+#      deliberately invalid, so an unedited copy fails at checkout instead of
+#      reviewing with something nobody chose. The two values must be identical:
+#      the first pins the workflow, the second pins the engine it installs.
+#      A branch or tag is refused, because both move under every subscriber.
+#   2. Add the secrets below to the repository (Settings, Secrets and
+#      variables, Actions). Use a dedicated Anthropic workspace key with a low
+#      spend limit. Anyone with write access to this repository can read a
+#      repository secret by editing a workflow, so the key must be one you can
+#      afford to lose and revoke.
+#        SHODANN_LLM_API_KEY   the Anthropic key for the primary model
+#        ANTHROPIC_API_KEY     optional; enables the claude-haiku-4-5 fallback
+#   3. The repository must be owned by the organisation that runs the course,
+#      and pull requests must come from branches of this repository. A pull
+#      request from a fork gets no secrets and a read-only token, so the model
+#      call, the comment and the ledger all fail together.
+#   4. The default branch must allow the Actions token to push (the ledger is
+#      committed there on merge), or set `record-ledger: false` below.
+#
+# The leaderboard is off. Turning it on is a decision about ranking students
+# and belongs to whoever owns the course, not to this template.
+# =============================================================================
+
+name: SHODANN
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: write        # the ledger commit, on merge only
+  pull-requests: write   # the review comment
+
+concurrency:
+  # One review per pull request. A rapid push sequence must not race two jobs
+  # to write the same citizen file.
+  group: shodann-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    uses: norrisaftcc/algorithm-shodann/.github/workflows/shodann-review.yml@0000000000000000000000000000000000000000
+    with:
+      engine-ref: '0000000000000000000000000000000000000000'
+      llm-wire: anthropic
+      llm-model: claude-haiku-5-5
+      llm-effort: low
+      llm-max-tokens: '2000'
+      leaderboard: false
+      record-ledger: true
+    secrets:
+      SHODANN_LLM_API_KEY: ${{ secrets.SHODANN_LLM_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
