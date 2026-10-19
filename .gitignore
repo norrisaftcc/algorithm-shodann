@@ -213,3 +213,4 @@ __marimo__/
 #   session id, which is dead weight on every other machine. Agents, skills
 #   and settings under .claude/ are project config and stay tracked.
 .claude/launch.json
+.claude/settings.local.json
