@@ -1,0 +1,455 @@
+# =============================================================================
+# SHODANN review, as a reusable workflow
+# =============================================================================
+#
+# A subscribing repository calls this file; it does not copy it. The caller is
+# `templates/subscriber/shodann.yml`, and it pins both this workflow and the
+# engine to one commit SHA.
+#
+# This file is the same two-job design as `shodann.yml` (read that file for the
+# long account of why each step exists). What differs is who the code belongs
+# to, and every difference below follows from one fact: in `shodann.yml` the
+# repository under review IS the engine, so `pip install .` is correct. Here
+# the repository under review is somebody else's, and `pip install .` would
+# install THEIR code into the job that holds the write token and the model key.
+#
+#   analyse  contents: read, no secrets. Checks out the citizen at the
+#            workspace root and runs their pytest and ruff. Identical to the
+#            job in `shodann.yml`, deliberately: the frozen measurement set
+#            must not depend on which door a repository came in by.
+#   review   write token and the model key. Checks out the citizen into
+#            `citizen/` and the pinned engine into `engine/`, installs ONLY the
+#            engine (`pip install ./engine`, non-editable, which also proves
+#            the prompt templates ship inside the package), and runs every
+#            Python entry point with `-I` from a directory that can be the
+#            citizen's. It never executes a line the citizen wrote.
+#
+# WHY `python -I`. `python -m shodann.review` puts the current directory first
+# on sys.path. The ledger steps run with `working-directory: citizen`, so a
+# citizen who commits a `shodann/` directory would have it imported instead of
+# the installed engine, inside the job holding `contents: write`. `-I` removes
+# the working directory from sys.path and ignores PYTHON* variables. The
+# contract test asserts every invocation carries it.
+#
+# Model settings arrive as `inputs`, never `vars`: a called workflow reads the
+# CALLER's repository variables only if the caller forwards them, and nothing
+# here should depend on how that resolves. Keys arrive as `secrets`, and the
+# caller must pass them explicitly.
+# =============================================================================
+
+name: SHODANN review (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      engine-ref:
+        description: >-
+          Full 40-character commit SHA of norrisaftcc/algorithm-shodann to
+          install as the engine. A branch or tag is refused: both move.
+        type: string
+        required: true
+      python-version:
+        type: string
+        default: '3.12'
+      llm-wire:
+        description: "'openai' or 'anthropic'. Blank means openai."
+        type: string
+        default: ''
+      llm-model:
+        type: string
+        default: ''
+      llm-base-url:
+        description: "OpenAI-compatible wire only. The Anthropic SDK knows its own endpoint."
+        type: string
+        default: ''
+      llm-effort:
+        description: "low, medium, high, xhigh or max. Blank sends nothing."
+        type: string
+        default: ''
+      llm-max-tokens:
+        type: string
+        default: ''
+      llm-temperature:
+        description: >-
+          Blank means the wire's default (omitted on the Anthropic wire). A value
+          is sent in extra_body there; Haiku 5.5 answers a non-default one with a 400.
+        type: string
+        default: ''
+      llm-timeout:
+        type: string
+        default: ''
+      # The `fallback-*` inputs apply only when ANTHROPIC_API_KEY is passed and
+      # the primary could not answer. Blank means the program's default: model
+      # claude-haiku-4-5, no temperature, max tokens 2000. A value set in
+      # `fallback-temperature` is sent in the request's extra_body; Haiku 5.5
+      # answers a non-default temperature with a 400.
+      fallback-model:
+        type: string
+        default: ''
+      fallback-temperature:
+        type: string
+        default: ''
+      fallback-effort:
+        description: >-
+          Leave blank while the fallback model is Haiku 4.5, which rejects
+          output_config.effort. Set it only for a fallback that takes it.
+        type: string
+        default: ''
+      fallback-max-tokens:
+        type: string
+        default: ''
+      leaderboard:
+        description: >-
+          Regenerate METRICS.md on merge. Off by default: a ranking is a
+          course-governance decision and nothing here makes it by omission.
+        type: boolean
+        default: false
+      record-ledger:
+        description: Write the citizen ledger on a merge to the default branch.
+        type: boolean
+        default: true
+    secrets:
+      SHODANN_LLM_API_KEY:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+
+jobs:
+  # The only job that executes a citizen's code, and the only job that holds
+  # nothing worth stealing. Keep this identical to `shodann.yml`'s.
+  analyse:
+    name: Hard analysis
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the submission
+        uses: actions/checkout@v7
+        with:
+          # Base on merge, head otherwise: the head branch is usually deleted
+          # by the time the closed event arrives.
+          ref: >-
+            ${{ github.event.action == 'closed'
+                && github.event.pull_request.base.ref
+                || github.event.pull_request.head.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install the frozen toolchain
+        # Exact pins on everything that reaches the velocity score. These
+        # versions must match `shodann.yml` and pyproject.toml; a contract test
+        # compares all three.
+        run: pip install --quiet "ruff==0.16.0" "pytest-cov==7.1.0" pytest
+
+      - name: Install the submission
+        run: |
+          pip install --quiet -e . 2>/dev/null             || pip install --quiet -r requirements.txt 2>/dev/null             || echo "Nothing to install; analysing as-is."
+
+      - name: Discard any report the citizen shipped us
+        # A report file is a tool's output, never a repository's content.
+        # -rf, not -f: `rm -f` exits 1 on a directory under `bash -e`.
+        run: rm -rf coverage.json ruff.json tests.xml
+
+      - name: Style and complexity
+        # --isolated: the citizen must not choose which rules are counted.
+        # --extend-select, never --select: extending adds C901 without
+        # rescoring the frozen lint count.
+        run: >-
+          ruff check . --isolated
+          --extend-select C90
+          --config "lint.mccabe.max-complexity=10"
+          --output-format=json > ruff.json || true
+
+      - name: Tests and coverage
+        # --cov=src, never --cov=.: the citizen's own test files must not
+        # enter the coverage denominator. --junitxml is the only tally pytest
+        # writes to a file.
+        run: |
+          if [ -d src ]; then COV=src; else COV=.; fi
+          pytest "--cov=$COV" --cov-report=json:coverage.json \
+                 --junitxml=tests.xml -q || true
+          test -f coverage.json || echo '{}' > coverage.json
+
+      - name: Hand the readings over
+        uses: actions/upload-artifact@v4
+        with:
+          name: shodann-reports
+          path: |
+            coverage.json
+            ruff.json
+            tests.xml
+          retention-days: 7
+
+  review:
+    name: The Algorithm observes
+    needs: [analyse]
+    # `always()` so a merge still records the ledger although `analyse` is
+    # skipped on close, and so a citizen still hears something when their own
+    # tests take the analysis job down.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Declared on the job, not inherited. A called workflow's token is capped
+    # by the caller, but the caller's `permissions` is the ceiling and not a
+    # statement of need: a caller that grants more must not hand it to the job
+    # that holds the model key. `analyse` declares `contents: read` the same way.
+    permissions:
+      contents: write        # the ledger commit, on merge only
+      pull-requests: write   # the review comment
+
+    steps:
+      - name: Refuse an engine that is not pinned to a commit
+        # A branch or a tag moves under every subscriber at once, which is the
+        # one thing a pinned engine exists to prevent. The value reaches the
+        # shell through env, never through an expression in the script.
+        env:
+          ENGINE_REF: ${{ inputs.engine-ref }}
+        run: |
+          if ! printf '%s' "$ENGINE_REF" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::engine-ref must be a full 40-character commit SHA."
+            exit 1
+          fi
+
+      - name: Check out the citizen
+        uses: actions/checkout@v7
+        with:
+          path: citizen
+          # Head branch normally, base on close: see `shodann.yml`. The
+          # credentials stay in place because the ledger push below needs them.
+          ref: >-
+            ${{ github.event.action == 'closed'
+                && github.event.pull_request.base.ref
+                || github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Check out the pinned engine
+        uses: actions/checkout@v7
+        with:
+          repository: norrisaftcc/algorithm-shodann
+          ref: ${{ inputs.engine-ref }}
+          path: engine
+          persist-credentials: false
+          # Full history, so the next step can ask whether this commit is an
+          # ancestor of main. A shallow checkout cannot answer that.
+          fetch-depth: 0
+
+      - name: Refuse an engine commit that is not on main
+        # A 40-character SHA proves the ref cannot move. It does not prove the
+        # commit was ever reviewed: a SHA from a fork, or from an unmerged
+        # branch of this repository, passes the format check and would install
+        # code that never went through a pull request. Ancestry of origin/main
+        # is the property that a merged, reviewed commit has.
+        #
+        # Equality between `engine-ref` and the caller's `uses:` ref is NOT
+        # checked, because it cannot be from here: `github.workflow_ref` and
+        # `github.workflow_sha` name the CALLER's file, and the called
+        # workflow's own SHA (`job_workflow_sha`) exists only as a claim in an
+        # OIDC token, which needs `id-token: write` that this job must not
+        # hold. Keeping the two equal is the caller's responsibility.
+        #
+        # The value reaches the shell through env, never through an expression.
+        env:
+          ENGINE_REF: ${{ inputs.engine-ref }}
+        run: |
+          # `fetch-depth: 0` fetches every branch, so origin/main normally
+          # exists. The fetch is a fallback for a checkout that did not.
+          if ! git -C engine rev-parse --verify --quiet origin/main >/dev/null; then
+            git -C engine fetch --quiet origin main || true
+          fi
+          if ! git -C engine rev-parse --verify --quiet origin/main >/dev/null; then
+            echo "::error::Could not find origin/main in the engine checkout, so the engine commit cannot be verified."
+            exit 1
+          fi
+          if ! git -C engine merge-base --is-ancestor "$ENGINE_REF" origin/main; then
+            echo "::error::engine-ref $ENGINE_REF is not an ancestor of main in norrisaftcc/algorithm-shodann. Pin a commit that has been merged."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install SHODANN
+        # The engine only, and not editable: an editable install would import
+        # from engine/src and hide a package that is missing its templates.
+        # Nothing ever installs citizen/.
+        run: pip install --quiet ./engine
+
+      - name: Collect the readings
+        # On merge too: the ledger written below is the next baseline.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: shodann-reports
+          path: shodann-reports
+
+      - name: Compose the review
+        id: compose
+        if: github.event.action != 'closed'
+        # Exit 3 means the review was written but something broke producing
+        # it. The comment still posts; the job still turns red at the end.
+        continue-on-error: true
+        env:
+          # Citizen-controlled text never enters this step as an expression.
+          SHODANN_LLM_WIRE: ${{ inputs.llm-wire }}
+          SHODANN_LLM_BASE_URL: ${{ inputs.llm-base-url }}
+          SHODANN_LLM_MODEL: ${{ inputs.llm-model }}
+          SHODANN_LLM_API_KEY: ${{ secrets.SHODANN_LLM_API_KEY }}
+          SHODANN_LLM_EFFORT: ${{ inputs.llm-effort }}
+          SHODANN_LLM_MAX_TOKENS: ${{ inputs.llm-max-tokens }}
+          SHODANN_LLM_TEMPERATURE: ${{ inputs.llm-temperature }}
+          SHODANN_LLM_TIMEOUT: ${{ inputs.llm-timeout }}
+          # The fallback, used only when the configured model cannot be
+          # reached. Absent key, no fallback.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SHODANN_FALLBACK_MODEL: ${{ inputs.fallback-model }}
+          SHODANN_FALLBACK_TEMPERATURE: ${{ inputs.fallback-temperature }}
+          SHODANN_FALLBACK_EFFORT: ${{ inputs.fallback-effort }}
+          SHODANN_FALLBACK_MAX_TOKENS: ${{ inputs.fallback-max-tokens }}
+        run: |
+          # --dry-run: a review never writes state. -I: see the header.
+          python -I -m shodann.review \
+            --event "$GITHUB_EVENT_PATH" \
+            --out shodann-comment.md \
+            --root citizen \
+            --reports shodann-reports \
+            --dry-run
+
+      - name: Post the review
+        if: github.event.action != 'closed' && hashFiles('shodann-comment.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The workspace root is not a git repository here (the citizen is in
+          # citizen/), so `gh` needs the repository named.
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --body-file shodann-comment.md
+
+      # Last resort: the program did not start. A fixed heredoc with no
+      # interpolation, because the one thing worse than silence is a shell
+      # injection in the handler that exists to survive failure.
+      - name: Announce the fault
+        if: failure() && github.event.action != 'closed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          cat > shodann-fault.md <<'NOTICE'
+          ## 🤖 SHODANN Analysis Complete
+
+          **Status**: REDUCED ALLOCATION
+
+          ---
+
+          ### ⚡ Resource Advisory
+
+          The Algorithm's oversight protocol did not complete this cycle. No
+          analysis was performed, and none of this reflects on your submission.
+
+          The fault is logged for the instructor. Carry on; the Algorithm will
+          resume observation once repaired.
+
+          ---
+
+          *The Algorithm sees your growth. The Algorithm is, briefly, not seeing anything.*
+          NOTICE
+          gh pr comment "$PR_NUMBER" --body-file shodann-fault.md
+
+      - name: Surface the fault to the maintainer
+        if: steps.compose.outcome == 'failure' && github.event.action != 'closed'
+        run: |
+          echo "::error::SHODANN degraded - a comment was posted, but the review failed to assemble."
+          exit 1
+
+      # The ledger is written on a merge to the default branch and nowhere
+      # else. `merged == true` alone counts a stacked pull request as a
+      # delivery, so the base ref is compared with the repository's own
+      # default branch, never the literal 'main'.
+      - name: Record the citizen ledger
+        if: >-
+          inputs.record-ledger
+          && github.event.action == 'closed'
+          && github.event.pull_request.merged == true
+          && github.event.pull_request.base.ref == github.event.repository.default_branch
+        working-directory: citizen
+        run: |
+          python -I -m shodann.review \
+            --event "$GITHUB_EVENT_PATH" \
+            --out /tmp/shodann-record.md \
+            --root . \
+            --reports "$GITHUB_WORKSPACE/shodann-reports"
+
+      # Off unless the subscriber turns it on. A leaderboard is a ranking of
+      # students, and whether a course shows one is the course's decision.
+      - name: Regenerate the leaderboard
+        if: >-
+          inputs.leaderboard
+          && inputs.record-ledger
+          && github.event.action == 'closed'
+          && github.event.pull_request.merged == true
+          && github.event.pull_request.base.ref == github.event.repository.default_branch
+        working-directory: citizen
+        run: python -I -m shodann.cli --action leaderboard --root . --out METRICS.md
+
+      - name: Commit and push the ledger
+        if: >-
+          inputs.record-ledger
+          && github.event.action == 'closed'
+          && github.event.pull_request.merged == true
+          && github.event.pull_request.base.ref == github.event.repository.default_branch
+        working-directory: citizen
+        env:
+          # Citizen-controlled text never enters this block as an expression.
+          CITIZEN: ${{ github.event.pull_request.user.login }}
+          LEADERBOARD: ${{ inputs.leaderboard }}
+        run: |
+          paths=(.shodann)
+          if [ "$LEADERBOARD" = "true" ]; then paths+=(METRICS.md); fi
+
+          if [ -z "$(git status --porcelain -- "${paths[@]}")" ]; then
+            echo "No ledger change to record."
+            exit 0
+          fi
+          git config user.name  "shodann[bot]"
+          git config user.email "shodann[bot]@users.noreply.github.com"
+          git add -- "${paths[@]}"
+          git commit -m "Record velocity for @${CITIZEN}"
+
+          # Rebase onto the freshly fetched tip and retry: the concurrency
+          # group is per pull request and does nothing between two. FETCH_HEAD,
+          # not origin/<branch>, which a refspec-less fetch may leave stale.
+          for attempt in 1 2 3; do
+            # A failed fetch is transient, so it retries.
+            if ! git fetch origin "$GITHUB_BASE_REF"; then
+              echo "::warning::SHODANN could not fetch ${GITHUB_BASE_REF} (attempt ${attempt}/3)."
+              sleep 5
+              continue
+            fi
+
+            # A rebase conflict is not: two runs wrote the same citizen file
+            # and it will conflict identically every time.
+            if ! git rebase FETCH_HEAD; then
+              git rebase --abort || true
+              echo "::warning::SHODANN could not replay the ledger for @${CITIZEN} onto ${GITHUB_BASE_REF}; the record was not written. The review posted normally and this does not reflect on the submission."
+              exit 0
+            fi
+
+            if git push origin "HEAD:${GITHUB_BASE_REF}"; then
+              exit 0
+            fi
+            echo "::warning::Ledger push for @${CITIZEN} was rejected (attempt ${attempt}/3); re-fetching."
+            sleep 5
+          done
+
+          # Warned, not failed: a red X for our own lost push would be a
+          # verdict on a student's submission for a fault they did not cause.
+          echo "::warning::SHODANN lost the race to push the ledger for @${CITIZEN} to ${GITHUB_BASE_REF} after 3 attempts. The review posted normally and this does not reflect on the submission."
+          exit 0

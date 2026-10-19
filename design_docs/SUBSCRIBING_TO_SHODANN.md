@@ -5,41 +5,66 @@ Use this if you want SHODANN to review pull requests in a repository other than
 
 ## Short version
 
-SHODANN is not yet a drop-in, one-click integration for a second repository.
-The current blocker is packaging: the prompt templates live in this repository's
-`prompts/` directory, and the review path still resolves them from the checkout's
-working directory. That means a copied workflow can look plausible while still
-posting empty or degraded comments.
+A second repository subscribes by **calling** SHODANN's reusable workflow, not
+by copying SHODANN's own workflow. The caller is one short file,
+`templates/subscriber/shodann.yml`. It pins the workflow and the engine it
+installs to a single commit SHA of `algorithm-shodann`, and the reusable
+workflow installs only that engine. Nothing installs the repository under
+review.
 
-If you are planning the integration anyway, the practical checklist is:
+Do not copy `.github/workflows/shodann.yml`. It is the self-review workflow, and
+its `review` job runs `pip install .`, which in any other repository installs
+the student's package into the job that holds the write token and the model key.
+
+The checklist:
 
 1. Use a repository topology that matches the product decision:
-   - org-owned or otherwise same-repo-branch PRs
-   - plain `pull_request`, not `pull_request_target`
-   - the `analyse` / `review` split intact
-2. Copy `.github/workflows/shodann.yml` into the target repository, but install
-   SHODANN from its own pinned source rather than `pip install --quiet .`.
-3. Add the required secrets and variables in the target repository:
-   - `secrets.SHODANN_LLM_API_KEY`
-   - `vars.SHODANN_LLM_BASE_URL`
-   - `vars.SHODANN_LLM_MODEL`
-   - `secrets.ANTHROPIC_API_KEY` (optional fallback)
-   - `vars.SHODANN_FALLBACK_MODEL` (optional)
+   - org-owned, with same-repo branch PRs (not forks)
+   - plain `pull_request`, never `pull_request_target`
+2. Copy `templates/subscriber/shodann.yml` to `.github/workflows/shodann.yml` in
+   the target repository. Replace **both** all-zero placeholders with one full
+   40-character commit SHA of `norrisaftcc/algorithm-shodann` that contains
+   `.github/workflows/shodann-review.yml`. A branch or a tag is refused.
+3. Add the secrets to the target repository, using a **dedicated Anthropic
+   workspace key with a low monthly spend limit**:
+   - `SHODANN_LLM_API_KEY` (the primary model key)
+   - `ANTHROPIC_API_KEY` (optional; enables the fallback model)
+
+   Model, effort and token settings are **inputs in the caller file**, not
+   repository variables.
 4. Add `.shodann/clearances.json` before the first PR if you want non-default
    clearance bands from day one.
 5. Open a branch PR in the target repository and confirm that the review comment
    contains real sections and metrics rather than a reduced-allocation or minimal
    response notice.
 
+## Know before you subscribe
+
+- **Anyone with write access to the target repository can read its secrets.** A
+  `pull_request` run uses the workflow file on the PR's own branch, so a
+  collaborator can edit the caller to print a secret. The SHA pin protects the
+  engine, not the key. That is why the key must be dedicated and spend-limited.
+- **The leaderboard is off by default** (`leaderboard: false`). With it off,
+  merges write `.shodann/` only, and `METRICS.md` is not generated. Whether a
+  course ranks its students is the course's decision.
+- **Cross-repository aggregation is not built.** Each repository keeps its own
+  ledger.
+- **Turning SHODANN on for a particular course is a separate decision from
+  whether it can be done.** For CTS-285, see
+  `design_docs/SUBSCRIBING_A_CTS285_REPOSITORY.md`.
+
 ## What can go wrong
 
 The most common failure modes are:
 
-- the workflow installs the target repository as though it were SHODANN itself
-- the review job cannot find SHODANN's prompt templates and falls back to a
-  minimal response
-- the review comment posts, but the run still exits in a degraded state
-- the citizen ledger never updates because the merge path is not reached
+- the caller still carries the all-zero placeholder SHA, so the run fails at
+  checkout (deliberate)
+- the secrets were set in the repository but not passed through `secrets:` in
+  the caller
+- the review comment posts, but the run exits red because the compose step
+  degraded (exit 3 is written, posted, then surfaced on purpose)
+- the citizen ledger never updates because the merge was not to the default
+  branch, `record-ledger` is `false`, or branch protection refuses the push
 - the repository starts with the default RED clearance because
   `.shodann/clearances.json` is missing or misnamed
 
@@ -53,8 +78,9 @@ any course-wide rollout:
 2. Confirm that the posted comment contains the normal SHODANN structure (for
    example, a velocity report and growth opportunities) rather than the reduced
    allocation or minimal response fallbacks.
-3. Merge the PR and confirm that the repository's `.shodann/citizens/` state and
-   `METRICS.md` update on the target repository's default branch.
+3. Merge the PR and confirm that the repository's `.shodann/citizens/` state
+   updates on the target repository's default branch. `METRICS.md` should *not*
+   appear unless you turned `leaderboard` on.
 4. Repeat once with a docs-only PR and once with a syntax-breaking PR to make
    sure the edge-case handlers are reachable and that the interface stays clear.
 
@@ -70,11 +96,14 @@ adjustments would help:
   setup-related failures so the comment is easier to scan.
 - If a subscription issue is detected, surface a separate, plain-language note in
   the workflow logs or PR comment that says what is missing (for example, the
-  install step, the prompt package, or the required secrets).
+  engine pin or the required secrets).
 
 ## Where to read more
 
 - `design_docs/ONBOARDING_A_REPOSITORY.md` — the detailed, technical version of
-  the same plan, including the current blocker and the exact prerequisites.
+  the same plan: prerequisites, inputs, steps, and the history of the blockers
+  that were fixed.
 - `design_docs/SHODANN_SUBSCRIPTION_TROUBLESHOOTING.md` — a shorter list of
   symptoms and likely causes.
+- `design_docs/SUBSCRIBING_A_CTS285_REPOSITORY.md` — the CTS-285 profile and the
+  governance gate.
