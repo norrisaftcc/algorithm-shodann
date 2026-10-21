@@ -550,19 +550,27 @@ def live_ledger() -> dict:
         return json.load(handle)
 
 
-def test_the_live_record_annotates_its_three_known_seams(live_ledger: dict) -> None:
-    """S1-16, S1-17, S1-39. Each is a stored figure that is honest about what
+def test_the_live_record_annotates_its_known_seams(live_ledger: dict) -> None:
+    """S1-16 and S1-39. Each is a stored figure that is honest about what
     the instrument did and misleading about what a reader assumes it means.
+
+    There were three until 2026-10-21. S1-17 annotated the 410.0 entry in
+    `velocity_history`; ordinary use evicted that entry from the ten-deep ring,
+    and the owner retired the annotation with it rather than keep a note about
+    a datum the record no longer holds. Its text is archived in the sprint's
+    Closure section (`design_docs/sprints/2026-07-28/01-candidates.md`).
     """
     seams = live_ledger["discontinuities"]
-    assert len(seams) == 3
+    assert len(seams) == 2
     for seam in seams:
         assert set(seam) == {"date", "fields", "kind", "note"}
         assert seam["note"].strip(), "a seam with no prose explains nothing"
 
     covered = {field for seam in seams for field in seam["fields"]}
     assert {"pr_count", "iteration_streak"} <= covered, "S1-16: counters counted pushes"
-    assert "velocity_history" in covered, "S1-17: the 410.0 residue"
+    assert "velocity_history" not in covered, (
+        "S1-17 was retired with its datum; a seam on velocity_history now names something new"
+    )
     assert "last_metrics.complexity" in covered, "S1-39: def count became C901 count"
 
 
@@ -582,13 +590,11 @@ def test_the_live_record_was_annotated_and_not_corrected(live_ledger: dict) -> N
     ever takes them up. `>=` separates those two, and a test that survives its
     own subject changing under it is the only kind worth having here.
 
-    The 410.0 assertion is left as an exact membership check on purpose, and it
-    is a fuse rather than a bomb: the entry sits in a ten-deep newest-first ring
-    and will be evicted by ordinary use, at which point this line fails while
-    the seam annotation describing it remains. That is the correct moment to
-    revisit whether an annotation should outlive the datum it annotates - a
-    question this rung has not answered, and one nobody should have to
-    rediscover from a red suite with no explanation attached.
+    It also pinned the 410.0 entry by exact membership, as a fuse: the entry
+    sat in a ten-deep newest-first ring and would be evicted by ordinary use.
+    The fuse blew after #71 merged, and on 2026-10-21 the owner answered the
+    question it was set to raise - an annotation does not outlive its datum.
+    The S1-17 seam was archived and the membership check removed with it.
     """
     assert live_ledger["pr_count"] >= 19, "a correction would reduce this, a merge raises it"
     assert live_ledger["iteration_streak"] >= 19
@@ -596,7 +602,6 @@ def test_the_live_record_was_annotated_and_not_corrected(live_ledger: dict) -> N
         "S1-23 made both counters unconditional, so they cannot diverge again"
     )
     assert live_ledger["last_metrics"]["complexity"] == 0
-    assert 410.0 in [entry["score"] for entry in live_ledger["velocity_history"]]
 
 
 def test_the_live_record_still_loads(live_ledger: dict) -> None:
@@ -605,7 +610,7 @@ def test_the_live_record_still_loads(live_ledger: dict) -> None:
     assert record.citizen == "norrisaftcc"
     assert record.schema_version == 1, "written before versioning; absent means 1"
     assert record.extra == {}
-    assert len(record.discontinuities) == 3
+    assert len(record.discontinuities) == 2, "S1-17 was archived on 2026-10-21"
 
 
 # --- what a hand-edited ledger may and may not do ---------------------------

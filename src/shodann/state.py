@@ -265,12 +265,16 @@ class CitizenRecord:
     """Seams in this citizen's own history, where a stored figure stopped
     being comparable to the ones before it.
 
-    S1-16, S1-17 and S1-39 are all the same shape: a number in the live ledger
-    that is honest about what the instrument did and misleading about what a
-    reader assumes it means. `pr_count` counted pushes and stacked-PR
-    double-writes rather than merges; a `velocity_history` entry is residue of
-    the absent-vs-zero defect (EARLY_RUNS 9); `complexity` changed from a
+    The live ledger carries two seams, S1-16 and S1-39, and both are the same
+    shape: a number that is honest about what the instrument did and misleading
+    about what a reader assumes it means. `pr_count` counted pushes and
+    stacked-PR double-writes rather than merges; `complexity` changed from a
     ``def`` count to a ruff `C901` count on 2026-07-29 without changing name.
+
+    A third, S1-17, marked a `velocity_history` entry that was residue of the
+    absent-vs-zero defect (EARLY_RUNS 9). The entry aged out of the ten-deep
+    ring, and the seam was archived with it on 2026-10-21. Its text is in the
+    Closure section of `design_docs/sprints/2026-07-28/01-candidates.md`.
 
     The alternative was to correct the figures, and this repository refuses
     that: editing a metric in a ledger to what it should have been is the move
