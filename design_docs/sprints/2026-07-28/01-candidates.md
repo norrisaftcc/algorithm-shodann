@@ -37,6 +37,22 @@ stays the artifact it is and the question "is this done?" has one answer.
 | S1-28 | the review rung, commit `1191ca5` — `with_config` and `tune` swept rather than wired up |
 | S1-30 | superseded by #56's platform matrix |
 
+**S1-17's annotation is archived (2026-10-21).** The 410.0 entry left the
+ten-deep `velocity_history` ring through ordinary use after #71 merged, and
+`test_the_live_record_was_annotated_and_not_corrected` failed as designed. The
+owner decided the annotation goes with its datum: the course always expected a
+reset, and the seam existed to keep the record honest until then. The figure was
+never corrected; it aged out. The seam's text, as it stood in
+`.shodann/citizens/norrisaftcc.json`, is kept here so the reasoning survives:
+
+> `2026-07-26T01:42:46Z`, fields `velocity_history`, kind `defect_residue`:
+> "S1-17. The 410.0 entry at this timestamp is residue of the absent-vs-zero
+> defect (EARLY_RUNS 9): an unmeasured coverage reading reached the engine as
+> 0.0, so the next measured reading scored as a ~98-point gain that nobody
+> earned. Left in place. Any trend, average or delta whose window includes this
+> timestamp is inflated by it - compute_trend over the three entries around it
+> reads descending, and the same three without it read ascending."
+
 **S1-44 is closed on the leaderboard only.** A seamed figure is now marked and
 footnoted in `METRICS.md`, so the instructor-facing surface no longer publishes
 a number the record itself calls wrong. The degraded PR comment still prints a

@@ -268,8 +268,9 @@ class CitizenRecord:
     S1-16, S1-17 and S1-39 are all the same shape: a number in the live ledger
     that is honest about what the instrument did and misleading about what a
     reader assumes it means. `pr_count` counted pushes and stacked-PR
-    double-writes rather than merges; a `velocity_history` entry is residue of
-    the absent-vs-zero defect (EARLY_RUNS 9); `complexity` changed from a
+    double-writes rather than merges; a `velocity_history` entry was residue of
+    the absent-vs-zero defect (EARLY_RUNS 9) until it aged out of the ring, and
+    its annotation was archived on 2026-10-21; `complexity` changed from a
     ``def`` count to a ruff `C901` count on 2026-07-29 without changing name.
 
     The alternative was to correct the figures, and this repository refuses
