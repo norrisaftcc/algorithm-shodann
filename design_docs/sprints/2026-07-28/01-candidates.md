@@ -31,7 +31,8 @@ stays the artifact it is and the question "is this done?" has one answer.
 | S1-09, S1-41 | #59 — the clearance register, the budgeted footer |
 | S1-06, S1-07, S1-08 | #60 — the tallies reach the DATA layer |
 | S1-15, S1-18, S1-19, S1-21, S1-22, S1-23, S1-38 | the ledger rung |
-| S1-16, S1-17, S1-39 | the ledger rung — **annotated, not corrected**; the figures stand and `discontinuities` records where the seams are |
+| S1-16, S1-39 | the ledger rung — **annotated, not corrected**; the figures stand and `discontinuities` records where the seams are |
+| S1-17 | the ledger rung, annotated; **archived 2026-10-21** when its datum aged out of the ring — see below |
 | S1-12, S1-14 | the METRICS.md rung — the producer, and the consent default it would otherwise have weaponised |
 | S1-45 | the review rung — the rules behind the style count now reach the prose, which is where `read_lint_issues` always said they belonged |
 | S1-28 | the review rung, commit `1191ca5` — `with_config` and `tune` swept rather than wired up |
